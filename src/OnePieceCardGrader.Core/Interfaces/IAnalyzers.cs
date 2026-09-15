@@ -44,7 +44,8 @@ public interface ICornerAnalyzer
         Enums.CornerPosition position,
         Enums.CardSide side,
         bool isMacroImage,
-        NormalizedRect? sourceRegion = null);
+        NormalizedRect? sourceRegion = null,
+        QuadCorners? macroCardCorners = null);
 }
 
 public interface IEdgeAnalyzer

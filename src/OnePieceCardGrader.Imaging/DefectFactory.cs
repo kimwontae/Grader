@@ -1,5 +1,6 @@
 using OnePieceCardGrader.Core.Calculations;
 using OnePieceCardGrader.Core.Enums;
+using OnePieceCardGrader.Core.Explanations;
 using OnePieceCardGrader.Core.Models;
 
 namespace OnePieceCardGrader.Imaging;
@@ -28,15 +29,19 @@ internal static class DefectFactory
             return null;
         }
 
+        var gradeCap = DefectScoreMath.CapFromSeverity(severity);
+        var narration = DefectNarrator.ForWhitening(side, label, type, severity, result, gradeCap);
         return new DetectedDefect
         {
             Type = type,
             Severity = severity,
             Side = side,
-            Region = region ?? result.Components.FirstOrDefault()?.BoundingBox,
+            Region = result.Components.FirstOrDefault()?.BoundingBox ?? region,
             Confidence = Math.Clamp(result.Confidence / 100.0, 0, 1),
-            Description = $"{side} {label}: whitening length {result.WhiteningLengthRatio:P2}, ΔE {result.MeanDeltaE:F1}",
-            GradeCap = DefectScoreMath.CapFromSeverity(severity),
+            Title = narration.Title,
+            Description = narration.Description,
+            Impact = narration.Impact,
+            GradeCap = gradeCap,
             Metrics = new Dictionary<string, double>
             {
                 ["severity"] = result.Severity,
@@ -65,6 +70,8 @@ internal static class DefectFactory
             _ => DefectType.CornerRounding
         };
 
+        var gradeCap = DefectScoreMath.CapFromSeverity(severity);
+        var narration = DefectNarrator.ForGeometry(side, result, severity, gradeCap);
         return new DetectedDefect
         {
             Type = type,
@@ -72,8 +79,10 @@ internal static class DefectFactory
             Side = side,
             Region = region,
             Confidence = Math.Clamp(result.Confidence / 100.0, 0, 1),
-            Description = $"{side} {result.Position}: {result.Type} (missing {result.MissingAreaRatio:P2}, deviation {result.MeanContourDeviation:F4})",
-            GradeCap = DefectScoreMath.CapFromSeverity(severity),
+            Title = narration.Title,
+            Description = narration.Description,
+            Impact = narration.Impact,
+            GradeCap = gradeCap,
             Metrics = new Dictionary<string, double>
             {
                 ["severity"] = result.Severity,
@@ -93,6 +102,8 @@ internal static class DefectFactory
             severity = DefectSeverity.Trace;
         }
 
+        var gradeCap = DefectScoreMath.CapFromSeverity(severity);
+        var narration = DefectNarrator.ForScratch(side, candidate, severity, gradeCap);
         return new DetectedDefect
         {
             Type = candidate.Type == ScratchCandidateType.PrintLineCandidate ? DefectType.PrintLine : DefectType.Scratch,
@@ -100,8 +111,10 @@ internal static class DefectFactory
             Side = side,
             Region = candidate.BoundingBox,
             Confidence = Math.Clamp(candidate.DetectionConfidence, 0, 1),
-            Description = $"{side} surface {candidate.Type} L={candidate.LengthRatio:P2} W={candidate.WidthRatio:P3} C={candidate.LocalContrast:F1}",
-            GradeCap = DefectScoreMath.CapFromSeverity(severity),
+            Title = narration.Title,
+            Description = narration.Description,
+            Impact = narration.Impact,
+            GradeCap = gradeCap,
             Metrics = new Dictionary<string, double>
             {
                 ["severity"] = candidate.Severity,

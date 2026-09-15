@@ -128,6 +128,78 @@ public sealed class GradingEngineTests
     }
 
     [Fact]
+    public void IgnoringCornerWhitening_ShouldRaisePredictedGrade()
+    {
+        var provider = new JsonGradingProfileProvider(Path.GetTempPath());
+        var engine = new GradingEngine(provider, NullLogger<GradingEngine>.Instance);
+        var front = CenteringMath.FromMargins(50, 50, 50, 50, 0.9);
+        var defect = new DetectedDefect
+        {
+            Type = DefectType.CornerWhitening,
+            Severity = DefectSeverity.Minor,
+            Title = "전면 우상단 모서리에 약한 화이트닝이 있습니다",
+            Description = "테스트 화이트닝",
+            Impact = "이 결함만 봐도 예상 등급은 PSA 9을 넘기기 어렵습니다.",
+            Confidence = 0.8,
+            GradeCap = 9
+        };
+        var analysis = new CardAnalysisResult
+        {
+            Centering = new CenteringResult
+            {
+                Status = AnalysisStatus.Completed,
+                Front = front,
+                EstimatedGradeCap = 10
+            },
+            Corners = new CornerAnalysisResult
+            {
+                Status = AnalysisStatus.Completed,
+                ConditionScore = 84,
+                GradeCap = 9,
+                Corners =
+                [
+                    new CornerResult
+                    {
+                        Position = CornerPosition.TopRight,
+                        CombinedScore = 84,
+                        Status = AnalysisStatus.Completed,
+                        Defects = [defect]
+                    }
+                ]
+            },
+            Surface = new SurfaceAnalysisResult
+            {
+                Status = AnalysisStatus.Completed,
+                ConditionScore = 96,
+                GradeCap = 10,
+                Confidence = 0.8
+            },
+            Edges = new EdgeAnalysisResult
+            {
+                Status = AnalysisStatus.Completed,
+                ConditionScore = 96,
+                GradeCap = 10,
+                Confidence = 0.8
+            },
+            Coverage = new AnalysisCoverage { Overall = 80, Centering = 100, Corners = 80, Surface = 80, Edges = 80, HasFront = true },
+            Front = new SideImageAnalysis
+            {
+                Quality = new ImageQualityResult { OverallQualityScore = 90, IsAcceptable = true },
+                Detection = new CardDetectionResult { Success = true, Confidence = 0.9 }
+            },
+            Defects = [defect]
+        };
+
+        var before = engine.Calculate(analysis);
+        Assert.True(before.PredictedGrade <= 9);
+
+        defect.ReviewStatus = DefectReviewStatus.Ignored;
+        var after = engine.Calculate(analysis);
+        Assert.True(after.PredictedGrade > before.PredictedGrade);
+        Assert.Equal(10, after.Corners.GradeCap);
+    }
+
+    [Fact]
     public void JsonProfile_ShouldLoadDefaultPsaWhenDirectoryMissing()
     {
         var provider = new JsonGradingProfileProvider(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));

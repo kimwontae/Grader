@@ -38,11 +38,12 @@ public sealed class CornerAnalyzer : ICornerAnalyzer
         CornerPosition position,
         CardSide side,
         bool isMacroImage,
-        NormalizedRect? sourceRegion = null)
+        NormalizedRect? sourceRegion = null,
+        QuadCorners? macroCardCorners = null)
     {
         var src = MatAdapter.Unwrap(image);
         using var expanded = isMacroImage
-            ? ExpandMacro(src, position, _analysisOptions.Normalization)
+            ? ExpandMacro(src, position, _analysisOptions.Normalization, macroCardCorners)
             : null;
         var card = expanded ?? src;
         var glareDet = GlareDetector.Analyze(card, _analysisOptions.Quality);
@@ -54,7 +55,7 @@ public sealed class CornerAnalyzer : ICornerAnalyzer
         {
             ImageQuality = isMacroImage ? 78 : 70,
             Focus = 70,
-            CardDetectionConfidence = isMacroImage ? 0.9 : 0.75
+            CardDetectionConfidence = macroCardCorners is not null ? 0.97 : isMacroImage ? 0.9 : 0.75
         };
 
         var whitening = _whiteningAnalyzer.Analyze(
@@ -107,6 +108,7 @@ public sealed class CornerAnalyzer : ICornerAnalyzer
             Status = AnalysisStatus.Completed,
             Region = sourceRegion,
             UsedMacroImage = isMacroImage,
+            UsedManualRegion = macroCardCorners is not null,
             WhiteningSeverity = whitening.Severity,
             GeometrySeverity = geometry.Severity,
             Whitening = whitening,
@@ -114,17 +116,66 @@ public sealed class CornerAnalyzer : ICornerAnalyzer
         };
     }
 
-    private static Mat ExpandMacro(Mat macro, CornerPosition position, NormalizationOptions normalization)
+    private static Mat ExpandMacro(Mat macro, CornerPosition position, NormalizationOptions normalization, QuadCorners? corners)
     {
-        var canvas = new Mat(
-            normalization.CanonicalHeight,
-            normalization.CanonicalWidth,
-            MatType.CV_8UC3,
-            Cv2.Mean(macro));
-        var roi = CornerGeometryAnalyzer.ExtractRoi(canvas.Size(), position, 0.22);
-        using var resized = macro.Resize(roi.Size);
-        using var dest = new Mat(canvas, roi);
-        resized.CopyTo(dest);
-        return canvas;
+        Mat? warped = null;
+        try
+        {
+            if (corners is not null)
+            {
+                var previewRoi = CornerGeometryAnalyzer.ExtractRoi(
+                    new Size(normalization.CanonicalWidth, normalization.CanonicalHeight),
+                    position,
+                    0.22);
+                warped = WarpQuad(macro, corners, previewRoi.Size);
+            }
+
+            var fillSource = warped ?? macro;
+            var canvas = new Mat(
+                normalization.CanonicalHeight,
+                normalization.CanonicalWidth,
+                MatType.CV_8UC3,
+                Cv2.Mean(fillSource));
+            var roi = CornerGeometryAnalyzer.ExtractRoi(canvas.Size(), position, 0.22);
+            using var dest = new Mat(canvas, roi);
+            if (warped is not null)
+            {
+                using var resized = warped.Size() == roi.Size ? warped.Clone() : warped.Resize(roi.Size);
+                resized.CopyTo(dest);
+            }
+            else
+            {
+                using var resized = macro.Resize(roi.Size);
+                resized.CopyTo(dest);
+            }
+
+            return canvas;
+        }
+        finally
+        {
+            warped?.Dispose();
+        }
+    }
+
+    private static Mat WarpQuad(Mat source, QuadCorners corners, Size destSize)
+    {
+        var srcPoints = InputArray.Create(new[]
+        {
+            new Point2f((float)corners.TopLeft.X, (float)corners.TopLeft.Y),
+            new Point2f((float)corners.TopRight.X, (float)corners.TopRight.Y),
+            new Point2f((float)corners.BottomRight.X, (float)corners.BottomRight.Y),
+            new Point2f((float)corners.BottomLeft.X, (float)corners.BottomLeft.Y)
+        });
+        var destPoints = InputArray.Create(new[]
+        {
+            new Point2f(0, 0),
+            new Point2f(destSize.Width - 1, 0),
+            new Point2f(destSize.Width - 1, destSize.Height - 1),
+            new Point2f(0, destSize.Height - 1)
+        });
+        using var matrix = Cv2.GetPerspectiveTransform(srcPoints, destPoints);
+        var warped = new Mat();
+        Cv2.WarpPerspective(source, warped, matrix, destSize, InterpolationFlags.Cubic);
+        return warped;
     }
 }

@@ -1,6 +1,7 @@
 using OnePieceCardGrader.Core.Calculations;
 using OnePieceCardGrader.Core.Constants;
 using OnePieceCardGrader.Core.Enums;
+using OnePieceCardGrader.Core.Explanations;
 using OnePieceCardGrader.Core.Interfaces;
 using OnePieceCardGrader.Core.Models;
 using OnePieceCardGrader.Core.Options;
@@ -24,10 +25,7 @@ public sealed class GradingEngine : IGradingEngine
         ArgumentNullException.ThrowIfNull(analysis);
         var profile = _profiles.GetProfile(AppConstants.DefaultProfileName);
 
-        var centeringScore = analysis.Centering.Front is null
-            ? 0
-            : CenteringMath.ConditionScore(analysis.Centering.Front.WorstRatio);
-        var centeringCap = analysis.Centering.EstimatedGradeCap;
+        var (centeringScore, centeringCap) = ResolveCentering(analysis, profile);
         var centeringGrade = new CategoryGrade
         {
             Name = "Centering",
@@ -38,32 +36,48 @@ public sealed class GradingEngine : IGradingEngine
             Notes = analysis.Centering.Notes
         };
 
+        var cornerDefects = analysis.Corners.Corners.SelectMany(c => c.Defects).ToArray();
+        var (cornerScore, resolvedCornerCap) = ResolveCategory(
+            analysis.Corners.Status,
+            analysis.Corners.ConditionScore,
+            analysis.Corners.GradeCap,
+            cornerDefects);
         var cornerGrade = ToCategory(
             "Corners",
             analysis.Corners.Status,
-            analysis.Corners.ConditionScore,
-            analysis.Corners.GradeCap ?? DefectScoreMath.GradeCap(analysis.Corners.Corners.SelectMany(c => c.Defects)),
+            cornerScore,
+            resolvedCornerCap,
             analysis.Corners.Corners.Count == 0 ? 0 : analysis.Corners.Corners.Average(c => c.Confidence),
             analysis.Corners.UnavailableReason,
-            analysis.Corners.Corners.SelectMany(c => c.Defects).Select(d => d.Description).ToArray());
+            ActiveNotes(cornerDefects));
 
+        var (surfaceScore, resolvedSurfaceCap) = ResolveCategory(
+            analysis.Surface.Status,
+            analysis.Surface.ConditionScore,
+            analysis.Surface.GradeCap,
+            analysis.Surface.Defects);
         var surfaceGrade = ToCategory(
             "Surface",
             analysis.Surface.Status,
-            analysis.Surface.ConditionScore,
-            analysis.Surface.GradeCap ?? DefectScoreMath.GradeCap(analysis.Surface.Defects),
+            surfaceScore,
+            resolvedSurfaceCap,
             analysis.Surface.Confidence,
             analysis.Surface.UnavailableReason,
-            analysis.Surface.Defects.Select(d => d.Description).ToArray());
+            ActiveNotes(analysis.Surface.Defects));
 
+        var (edgeScore, resolvedEdgeCap) = ResolveCategory(
+            analysis.Edges.Status,
+            analysis.Edges.ConditionScore,
+            analysis.Edges.GradeCap,
+            analysis.Edges.Defects);
         var edgeGrade = ToCategory(
             "Edges",
             analysis.Edges.Status,
-            analysis.Edges.ConditionScore,
-            analysis.Edges.GradeCap ?? DefectScoreMath.GradeCap(analysis.Edges.Defects),
+            edgeScore,
+            resolvedEdgeCap,
             analysis.Edges.Confidence > 1 ? analysis.Edges.Confidence / 100.0 : analysis.Edges.Confidence,
             analysis.Edges.UnavailableReason,
-            analysis.Edges.Defects.Select(d => d.Description).ToArray());
+            ActiveNotes(analysis.Edges.Defects));
 
         var implementedScores = new List<(double Score, double Weight)>();
         if (analysis.Centering.Status == AnalysisStatus.Completed)
@@ -123,7 +137,11 @@ public sealed class GradingEngine : IGradingEngine
         var reasons = new List<string>();
         if (centeringCap < 10)
         {
-            reasons.Add($"센터링 worst ratio가 PSA 10 기준을 초과하여 예상 상한이 {centeringCap}입니다.");
+            var centeringNote = analysis.Defects
+                .FirstOrDefault(d => d.Type == DefectType.CenteringOff && DefectNarrator.IsActive(d));
+            reasons.Add(centeringNote is null
+                ? $"센터링 오차 때문에 예상 상한이 PSA {centeringCap}입니다."
+                : $"{centeringNote.Title}. {centeringNote.Impact}");
         }
 
         foreach (var note in cornerGrade.Notes.Take(3))
@@ -154,10 +172,10 @@ public sealed class GradingEngine : IGradingEngine
             confidence);
 
         var tenLimiter = analysis.Defects
-                             .Where(d => (d.GradeCap ?? 10) < 10)
+                             .Where(d => DefectNarrator.IsActive(d) && (d.GradeCap ?? 10) < 10)
                              .OrderBy(d => d.GradeCap ?? 10)
                              .ThenByDescending(d => d.Severity)
-                             .Select(d => d.Description)
+                             .Select(FormatDefect)
                              .FirstOrDefault()
                          ?? (centeringCap < 10
                              ? "센터링이 PSA 10 공개 기준 범위를 벗어났습니다."
@@ -179,6 +197,85 @@ public sealed class GradingEngine : IGradingEngine
             IsBorderline = borderline,
             PrimaryTenLimiter = tenLimiter
         };
+    }
+
+    public static GradingResult ApplyCriticalCap(GradingResult grading, GradeCapResult critical) =>
+        new()
+        {
+            PredictedGrade = Math.Min(grading.PredictedGrade, critical.MaxGrade),
+            GradeRangeMin = Math.Min(grading.GradeRangeMin, critical.MaxGrade),
+            GradeRangeMax = Math.Min(grading.GradeRangeMax, critical.MaxGrade),
+            AnalysisConfidence = grading.AnalysisConfidence,
+            Centering = grading.Centering,
+            Corners = grading.Corners,
+            Edges = grading.Edges,
+            Surface = grading.Surface,
+            Defects = grading.Defects,
+            GradeLimitReasons = grading.GradeLimitReasons.Concat(critical.Reasons).Distinct().ToArray(),
+            Summary = grading.Summary,
+            IsBorderline = grading.IsBorderline,
+            PrimaryTenLimiter = grading.PrimaryTenLimiter ?? critical.Reasons.FirstOrDefault()
+        };
+
+    private static (double Score, int Cap) ResolveCentering(CardAnalysisResult analysis, GradingProfile profile)
+    {
+        var centeringDefects = analysis.Defects.Where(d => d.Type == DefectType.CenteringOff).ToArray();
+        var front = analysis.Centering.Front;
+        var back = analysis.Centering.Back;
+        if (centeringDefects.Length > 0)
+        {
+            if (centeringDefects.Any(d => d.Side == CardSide.Front && !DefectNarrator.IsActive(d)))
+            {
+                front = Perfect(front);
+            }
+
+            if (centeringDefects.Any(d => d.Side == CardSide.Back && !DefectNarrator.IsActive(d)))
+            {
+                back = Perfect(back);
+            }
+        }
+
+        var cap = centeringDefects.Length > 0
+            ? CenteringGradeCapCalculator.CalculateCap(front, back, profile)
+            : analysis.Centering.EstimatedGradeCap;
+        var score = front is null ? 0 : CenteringMath.ConditionScore(front.WorstRatio);
+        return (score, cap);
+    }
+
+    private static CenteringMeasurement? Perfect(CenteringMeasurement? original) =>
+        original is null ? null : CenteringMath.FromMargins(50, 50, 50, 50, original.Confidence, original.Guide);
+
+    private static (double Score, int? Cap) ResolveCategory(
+        AnalysisStatus status,
+        double storedScore,
+        int? storedCap,
+        IEnumerable<DetectedDefect> defects)
+    {
+        if (status != AnalysisStatus.Completed)
+        {
+            return (storedScore, null);
+        }
+
+        var list = defects.ToArray();
+        var ignoredAny = list.Any(d => !DefectNarrator.IsActive(d));
+        var cap = ignoredAny ? DefectScoreMath.GradeCap(list) : storedCap ?? DefectScoreMath.GradeCap(list);
+        var score = ignoredAny
+            ? (list.Any(DefectNarrator.IsActive) ? DefectScoreMath.ConditionScore(list) : 100)
+            : storedScore;
+        return (score, cap);
+    }
+
+    private static string[] ActiveNotes(IEnumerable<DetectedDefect> defects) =>
+        defects.Where(DefectNarrator.IsActive).Select(FormatDefect).ToArray();
+
+    private static string FormatDefect(DetectedDefect defect)
+    {
+        if (!string.IsNullOrWhiteSpace(defect.Title) && !string.IsNullOrWhiteSpace(defect.Impact))
+        {
+            return $"{defect.Title}. {defect.Impact}";
+        }
+
+        return defect.Description;
     }
 
     private static CategoryGrade ToCategory(

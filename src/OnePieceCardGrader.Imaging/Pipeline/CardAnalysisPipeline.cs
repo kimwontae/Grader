@@ -1,6 +1,7 @@
 using OnePieceCardGrader.Core.Calculations;
 using OnePieceCardGrader.Core.Constants;
 using OnePieceCardGrader.Core.Enums;
+using OnePieceCardGrader.Core.Explanations;
 using OnePieceCardGrader.Core.Interfaces;
 using OnePieceCardGrader.Core.Models;
 using OnePieceCardGrader.Core.Options;
@@ -221,7 +222,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             };
 
             Report(progress, AnalysisStageNames.Corners, "모서리 whitening/geometry를 검사하는 중", 58);
-            var cornerAnalysis = AnalyzeCorners(frontSide, additional, options, imageOptions, analysisDebug, progress, cancellationToken);
+            var cornerAnalysis = AnalyzeCorners(frontSide, additional, input.AdditionalImageCorners, options, imageOptions, analysisDebug, progress, cancellationToken);
 
             Report(progress, AnalysisStageNames.Edges, "Edge whitening을 검사하는 중", 74);
             var edgeAnalysis = AnalyzeEdges(frontSide, imageOptions, analysisDebug, progress, cancellationToken);
@@ -231,27 +232,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             var coverage = BuildCoverage(input, frontSide, backSide, cornerAnalysis, edgeAnalysis, surfaceAnalysis);
             var defects = new List<DetectedDefect>();
-            if (frontCentering is not null && centeringCap < 10)
-            {
-                defects.Add(new DetectedDefect
-                {
-                    Type = DefectType.CenteringOff,
-                    Severity = centeringCap <= 7 ? DefectSeverity.Moderate : DefectSeverity.Minor,
-                    Side = CardSide.Front,
-                    Confidence = frontCentering.Confidence,
-                    Description = $"Front worst centering {frontCentering.WorstRatio:F1}% (L/R {frontCentering.LeftPercent:F1}/{frontCentering.RightPercent:F1}, T/B {frontCentering.TopPercent:F1}/{frontCentering.BottomPercent:F1})",
-                    GradeCap = centeringCap,
-                    Metrics = new Dictionary<string, double>
-                    {
-                        ["worstRatio"] = frontCentering.WorstRatio,
-                        ["leftPercent"] = frontCentering.LeftPercent,
-                        ["rightPercent"] = frontCentering.RightPercent,
-                        ["topPercent"] = frontCentering.TopPercent,
-                        ["bottomPercent"] = frontCentering.BottomPercent
-                    }
-                });
-            }
-
+            defects.AddRange(CreateCenteringDefects(frontCentering, backCentering, frontSide, backSide, options, profile));
             defects.AddRange(cornerAnalysis.Corners.SelectMany(c => c.Defects));
             defects.AddRange(edgeAnalysis.Defects);
             defects.AddRange(surfaceAnalysis.Defects);
@@ -281,6 +262,8 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 var overlayPath = await _imageStorage.SaveProcessedAsync(analysisId, "back_overlay.jpg", overlayBytes, cancellationToken);
                 backSide = CloneWithOverlay(backSide, overlayPath);
             }
+
+            await AttachZoomImagesAsync(analysisId, defects, frontSide, backSide, cancellationToken);
 
             var critical = _criticalEvaluator.Evaluate(defects);
             var result = new CardAnalysisResult
@@ -451,6 +434,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
     private CornerAnalysisResult AnalyzeCorners(
         SideImageAnalysis front,
         IReadOnlyDictionary<ImageSlotKind, string> additional,
+        IReadOnlyDictionary<ImageSlotKind, QuadCorners> macroCorners,
         AnalysisOptions options,
         ImageAnalysisOptions imageOptions,
         IAnalysisDebugSink analysisDebug,
@@ -506,8 +490,9 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             var hasMacro = additional.TryGetValue(slot, out var macroPath) && !string.IsNullOrWhiteSpace(macroPath);
             if (hasMacro)
             {
+                macroCorners.TryGetValue(slot, out var cardQuad);
                 using var macro = ExifOrientation.LoadOriented(macroPath!);
-                results.Add(_cornerAnalyzer.Analyze(MatAdapter.Wrap(macro), position, CardSide.Front, true, region));
+                results.Add(_cornerAnalyzer.Analyze(MatAdapter.Wrap(macro), position, CardSide.Front, true, region, cardQuad));
             }
             else
             {
@@ -821,6 +806,160 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         }
 
         return merged;
+    }
+
+    private static IEnumerable<DetectedDefect> CreateCenteringDefects(
+        CenteringMeasurement? front,
+        CenteringMeasurement? back,
+        SideImageAnalysis frontSide,
+        SideImageAnalysis? backSide,
+        AnalysisOptions options,
+        GradingProfile profile)
+    {
+        var defects = new List<DetectedDefect>();
+        profile.Centering.TryGetValue("10", out var psa10);
+        var frontMax = psa10?.FrontMax ?? 55;
+        var backMax = psa10?.BackMax ?? 75;
+
+        if (front is not null)
+        {
+            var cap = CenteringGradeCapCalculator.CalculateCap(front, null, profile);
+            if (cap < 10)
+            {
+                defects.Add(CreateCenteringDefect(
+                    CardSide.Front,
+                    front,
+                    cap,
+                    frontSide.NormalizedWidth,
+                    frontSide.NormalizedHeight,
+                    options.Card.WidthMm,
+                    options.Card.HeightMm,
+                    frontMax));
+            }
+        }
+
+        if (back is not null && backSide is not null)
+        {
+            var cap = CenteringGradeCapCalculator.CalculateCap(null, back, profile);
+            if (cap < 10)
+            {
+                defects.Add(CreateCenteringDefect(
+                    CardSide.Back,
+                    back,
+                    cap,
+                    backSide.NormalizedWidth,
+                    backSide.NormalizedHeight,
+                    options.Card.WidthMm,
+                    options.Card.HeightMm,
+                    backMax));
+            }
+        }
+
+        return defects;
+    }
+
+    private static DetectedDefect CreateCenteringDefect(
+        CardSide side,
+        CenteringMeasurement measurement,
+        int gradeCap,
+        double imageWidth,
+        double imageHeight,
+        double cardWidthMm,
+        double cardHeightMm,
+        double psa10Max)
+    {
+        var width = imageWidth > 0 ? imageWidth : 1260;
+        var height = imageHeight > 0 ? imageHeight : 1760;
+        var narration = DefectNarrator.ForCentering(
+            side,
+            measurement,
+            gradeCap,
+            cardWidthMm,
+            cardHeightMm,
+            width,
+            height,
+            psa10Max);
+        return new DetectedDefect
+        {
+            Type = DefectType.CenteringOff,
+            Severity = gradeCap <= 7 ? DefectSeverity.Moderate : DefectSeverity.Minor,
+            Side = side,
+            Confidence = measurement.Confidence,
+            Title = narration.Title,
+            Description = narration.Description,
+            Impact = narration.Impact,
+            GradeCap = gradeCap,
+            Metrics = new Dictionary<string, double>
+            {
+                ["worstRatio"] = measurement.WorstRatio,
+                ["leftPercent"] = measurement.LeftPercent,
+                ["rightPercent"] = measurement.RightPercent,
+                ["topPercent"] = measurement.TopPercent,
+                ["bottomPercent"] = measurement.BottomPercent,
+                ["leftMm"] = measurement.LeftMarginPx / width * cardWidthMm,
+                ["rightMm"] = measurement.RightMarginPx / width * cardWidthMm,
+                ["topMm"] = measurement.TopMarginPx / height * cardHeightMm,
+                ["bottomMm"] = measurement.BottomMarginPx / height * cardHeightMm
+            }
+        };
+    }
+
+    private async Task AttachZoomImagesAsync(
+        Guid analysisId,
+        IEnumerable<DetectedDefect> defects,
+        SideImageAnalysis? front,
+        SideImageAnalysis? back,
+        CancellationToken cancellationToken)
+    {
+        Mat? frontMat = null;
+        Mat? backMat = null;
+        try
+        {
+            if (front?.NormalizedPath is not null && File.Exists(front.NormalizedPath))
+            {
+                frontMat = Cv2.ImRead(front.NormalizedPath, ImreadModes.Color);
+            }
+
+            if (back?.NormalizedPath is not null && File.Exists(back.NormalizedPath))
+            {
+                backMat = Cv2.ImRead(back.NormalizedPath, ImreadModes.Color);
+            }
+
+            var index = 0;
+            foreach (var defect in defects)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (defect.Region is null || defect.Type == DefectType.CenteringOff)
+                {
+                    continue;
+                }
+
+                var source = defect.Side == CardSide.Back ? backMat : frontMat;
+                if (source is null || source.Empty())
+                {
+                    continue;
+                }
+
+                using var zoom = DefectZoomRenderer.Crop(source, defect.Region, "X");
+                if (zoom is null)
+                {
+                    continue;
+                }
+
+                var bytes = ImageCodec.EncodeJpeg(zoom);
+                defect.ZoomImagePath = await _imageStorage.SaveProcessedAsync(
+                    analysisId,
+                    $"defect_{index:00}_{defect.Type}.jpg",
+                    bytes,
+                    cancellationToken);
+                index++;
+            }
+        }
+        finally
+        {
+            frontMat?.Dispose();
+            backMat?.Dispose();
+        }
     }
 
     private static GradingResult ApplyCriticalCap(GradingResult grading, GradeCapResult critical) =>

@@ -21,4 +21,7 @@ public sealed class CardInput
 
     public IReadOnlyDictionary<ImageSlotKind, string> AdditionalImages { get; init; } =
         new Dictionary<ImageSlotKind, string>();
+
+    public IReadOnlyDictionary<ImageSlotKind, QuadCorners> AdditionalImageCorners { get; init; } =
+        new Dictionary<ImageSlotKind, QuadCorners>();
 }

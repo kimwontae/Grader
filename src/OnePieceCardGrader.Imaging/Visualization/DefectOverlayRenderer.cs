@@ -46,8 +46,8 @@ public static class DefectOverlayRenderer
         var suffix = defect.Confidence < 0.5 ? "?" : string.Empty;
         return defect.Type switch
         {
-            DefectType.CornerWhitening => "CORNER WEAR" + suffix,
-            DefectType.CornerRounding => "CORNER ROUND" + suffix,
+            DefectType.CornerWhitening or DefectType.EdgeWhitening => "WHITE" + suffix,
+            DefectType.CornerRounding => "ROUND" + suffix,
             DefectType.Scratch => "SCRATCH" + suffix,
             DefectType.Stain => "STAIN" + suffix,
             DefectType.Crease => "CREASE" + suffix,

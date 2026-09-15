@@ -117,24 +117,72 @@
                             </TabControl>
                         </Grid>
 
-                        <StackPanel Visibility="{Binding IsCornerStep, Converter={StaticResource BoolVis}}">
+                        <Grid Visibility="{Binding IsCornerStep, Converter={StaticResource BoolVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
                             <TextBlock TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,12"
-                                       Text="선택 사항입니다. 비워두면 전체 사진에서 모서리 ROI를 잘라 분석합니다. 확대 사진을 올리면 신뢰도가 올라갑니다." />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition />
-                                    <ColumnDefinition />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="220" />
-                                    <RowDefinition Height="220" />
-                                </Grid.RowDefinitions>
-                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="0" Title="Top Left" ImagePath="{Binding FrontCornerTopLeftPath, Mode=TwoWay}" Margin="0,0,8,8" />
-                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="1" Title="Top Right" ImagePath="{Binding FrontCornerTopRightPath, Mode=TwoWay}" Margin="8,0,0,8" />
-                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="0" Title="Bottom Left" ImagePath="{Binding FrontCornerBottomLeftPath, Mode=TwoWay}" Margin="0,8,8,0" />
-                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="1" Title="Bottom Right" ImagePath="{Binding FrontCornerBottomRightPath, Mode=TwoWay}" Margin="8,8,0,0" />
-                            </Grid>
-                        </StackPanel>
+                                       Text="선택 사항입니다. 확대 사진을 올린 뒤, 전면 사진과 같이 네 점을 드래그해 카드 모서리 영역을 지정하세요. 지정한 영역만 잘라 분석하므로 등급 정확도가 올라갑니다." />
+                            <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
+                                <TabItem Header="좌상단">
+                                    <DockPanel>
+                                        <controls:ImageDropSlot DockPanel.Dock="Top" Title="좌상단 확대 사진"
+                                                                ImagePath="{Binding FrontCornerTopLeftPath, Mode=TwoWay}" />
+                                        <Button DockPanel.Dock="Top" Content="영역 초기화" Style="{StaticResource GhostButton}"
+                                                Command="{Binding ResetCornerQuadCommand}" CommandParameter="TopLeft"
+                                                HorizontalAlignment="Left" Margin="0,8,0,8" />
+                                        <controls:QuadEditorControl MinHeight="380"
+                                                                    ImagePath="{Binding FrontCornerTopLeftPath}"
+                                                                    Corners="{Binding FrontCornerTopLeftCorners, Mode=TwoWay}"
+                                                                    ImageWidthPx="{Binding FrontCornerTopLeftWidth}"
+                                                                    ImageHeightPx="{Binding FrontCornerTopLeftHeight}" />
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="우상단">
+                                    <DockPanel>
+                                        <controls:ImageDropSlot DockPanel.Dock="Top" Title="우상단 확대 사진"
+                                                                ImagePath="{Binding FrontCornerTopRightPath, Mode=TwoWay}" />
+                                        <Button DockPanel.Dock="Top" Content="영역 초기화" Style="{StaticResource GhostButton}"
+                                                Command="{Binding ResetCornerQuadCommand}" CommandParameter="TopRight"
+                                                HorizontalAlignment="Left" Margin="0,8,0,8" />
+                                        <controls:QuadEditorControl MinHeight="380"
+                                                                    ImagePath="{Binding FrontCornerTopRightPath}"
+                                                                    Corners="{Binding FrontCornerTopRightCorners, Mode=TwoWay}"
+                                                                    ImageWidthPx="{Binding FrontCornerTopRightWidth}"
+                                                                    ImageHeightPx="{Binding FrontCornerTopRightHeight}" />
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="좌하단">
+                                    <DockPanel>
+                                        <controls:ImageDropSlot DockPanel.Dock="Top" Title="좌하단 확대 사진"
+                                                                ImagePath="{Binding FrontCornerBottomLeftPath, Mode=TwoWay}" />
+                                        <Button DockPanel.Dock="Top" Content="영역 초기화" Style="{StaticResource GhostButton}"
+                                                Command="{Binding ResetCornerQuadCommand}" CommandParameter="BottomLeft"
+                                                HorizontalAlignment="Left" Margin="0,8,0,8" />
+                                        <controls:QuadEditorControl MinHeight="380"
+                                                                    ImagePath="{Binding FrontCornerBottomLeftPath}"
+                                                                    Corners="{Binding FrontCornerBottomLeftCorners, Mode=TwoWay}"
+                                                                    ImageWidthPx="{Binding FrontCornerBottomLeftWidth}"
+                                                                    ImageHeightPx="{Binding FrontCornerBottomLeftHeight}" />
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="우하단">
+                                    <DockPanel>
+                                        <controls:ImageDropSlot DockPanel.Dock="Top" Title="우하단 확대 사진"
+                                                                ImagePath="{Binding FrontCornerBottomRightPath, Mode=TwoWay}" />
+                                        <Button DockPanel.Dock="Top" Content="영역 초기화" Style="{StaticResource GhostButton}"
+                                                Command="{Binding ResetCornerQuadCommand}" CommandParameter="BottomRight"
+                                                HorizontalAlignment="Left" Margin="0,8,0,8" />
+                                        <controls:QuadEditorControl MinHeight="380"
+                                                                    ImagePath="{Binding FrontCornerBottomRightPath}"
+                                                                    Corners="{Binding FrontCornerBottomRightCorners, Mode=TwoWay}"
+                                                                    ImageWidthPx="{Binding FrontCornerBottomRightWidth}"
+                                                                    ImageHeightPx="{Binding FrontCornerBottomRightHeight}" />
+                                    </DockPanel>
+                                </TabItem>
+                            </TabControl>
+                        </Grid>
 
                         <StackPanel Visibility="{Binding IsSurfaceStep, Converter={StaticResource BoolVis}}">
                             <TextBlock TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,12"
@@ -245,17 +293,18 @@
                                 <StackPanel DockPanel.Dock="Top">
                                     <TextBlock Text="PSA 예상 등급" Style="{StaticResource MutedText}" />
                                     <TextBlock FontSize="72" FontWeight="Bold" Foreground="{StaticResource AccentBrush}">
-                                        <Run Text="{Binding Result.Grading.PredictedGrade, Mode=OneWay}" />
+                                        <Run Text="{Binding DisplayedGrading.PredictedGrade, Mode=OneWay}" />
                                     </TextBlock>
                                     <TextBlock>
                                         <Run Text="예상 범위  PSA " />
-                                        <Run Text="{Binding Result.Grading.GradeRangeMin, Mode=OneWay}" />
+                                        <Run Text="{Binding DisplayedGrading.GradeRangeMin, Mode=OneWay}" />
                                         <Run Text=" ~ " />
-                                        <Run Text="{Binding Result.Grading.GradeRangeMax, Mode=OneWay}" />
+                                        <Run Text="{Binding DisplayedGrading.GradeRangeMax, Mode=OneWay}" />
                                     </TextBlock>
+                                    <TextBlock Text="{Binding WhatIfHint}" Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,0" />
                                     <TextBlock Margin="0,8,0,0">
                                         <Run Text="분석 신뢰도  " />
-                                        <Run Text="{Binding Result.Grading.AnalysisConfidence, Mode=OneWay, StringFormat=F0}" />
+                                        <Run Text="{Binding DisplayedGrading.AnalysisConfidence, Mode=OneWay, StringFormat=F0}" />
                                         <Run Text=" / 100" />
                                     </TextBlock>
                                     <TextBlock Text="{Binding ConfidenceMeaning}" Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,8,0,12" />
@@ -275,14 +324,14 @@
                                     <TextBlock Text="분석 점수" Style="{StaticResource SectionTitle}" />
                                     <TextBlock>
                                         <Run Text="Centering  " />
-                                        <Run Text="{Binding Result.Grading.Centering.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text="{Binding DisplayedGrading.Centering.ConditionScore, Mode=OneWay, StringFormat=F1}" />
                                         <Run Text=" / 100" />
                                     </TextBlock>
                                     <TextBlock Text="{Binding FrontRatioText}" Margin="0,4" />
                                     <TextBlock Text="{Binding BackRatioText}" Style="{StaticResource MutedText}" />
                                     <TextBlock Margin="0,12,0,4">
                                         <Run Text="Corners  " />
-                                        <Run Text="{Binding Result.Grading.Corners.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text="{Binding DisplayedGrading.Corners.ConditionScore, Mode=OneWay, StringFormat=F1}" />
                                         <Run Text=" / 100" />
                                     </TextBlock>
                                     <ItemsControl ItemsSource="{Binding Result.Corners.Corners}">
@@ -298,24 +347,40 @@
                                     </ItemsControl>
                                     <TextBlock Margin="0,12,0,4">
                                         <Run Text="Surface  " />
-                                        <Run Text="{Binding Result.Grading.Surface.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text="{Binding DisplayedGrading.Surface.ConditionScore, Mode=OneWay, StringFormat=F1}" />
                                         <Run Text=" / 100" />
                                     </TextBlock>
                                     <TextBlock Margin="0,12,0,4">
                                         <Run Text="Edges  " />
-                                        <Run Text="{Binding Result.Grading.Edges.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text="{Binding DisplayedGrading.Edges.ConditionScore, Mode=OneWay, StringFormat=F1}" />
                                         <Run Text=" / 100" />
                                     </TextBlock>
                                     <TextBlock Text="발견된 결함" FontWeight="SemiBold" Margin="0,12,0,4" />
-                                    <ItemsControl ItemsSource="{Binding Result.Defects}">
+                                    <TextBlock Text="체크를 해제하면 그 결함이 없는 것으로 보고 왼쪽 예상 등급을 다시 계산합니다."
+                                               Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                    <ItemsControl ItemsSource="{Binding DefectItems}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                                <Border Margin="0,0,0,12" Padding="10" Background="{StaticResource SurfaceAltBrush}" CornerRadius="8">
+                                                    <StackPanel>
+                                                        <CheckBox IsChecked="{Binding IsCounted, Mode=TwoWay}">
+                                                            <TextBlock Text="{Binding Title}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                                                        </CheckBox>
+                                                        <TextBlock Text="{Binding SeverityText}" Style="{StaticResource MutedText}" Margin="24,4,0,0" />
+                                                        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                                        <TextBlock Text="{Binding Impact}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,0" />
+                                                        <Image Source="{Binding ZoomImagePath, Converter={StaticResource PathImg}}"
+                                                               Stretch="Uniform"
+                                                               MaxHeight="240"
+                                                               Margin="0,10,0,0"
+                                                               Visibility="{Binding HasZoom, Converter={StaticResource BoolVis}}" />
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="PSA 10 제한 요인" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
-                                    <ItemsControl ItemsSource="{Binding Result.Explanation.LimitReasons}">
+                                    <ItemsControl ItemsSource="{Binding DisplayedExplanation.LimitReasons}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,0,0,8" />

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -10,6 +11,7 @@ using OnePieceCardGrader.Core.DTOs;
 using OnePieceCardGrader.Core.Enums;
 using OnePieceCardGrader.Core.Interfaces;
 using OnePieceCardGrader.Core.Models;
+using OnePieceCardGrader.Grading.Services;
 
 namespace OnePieceCardGrader.App.ViewModels;
 
@@ -18,16 +20,26 @@ public partial class WizardViewModel : ObservableObject
     private readonly ICardPreviewService _previewService;
     private readonly ICardAnalysisPipeline _pipeline;
     private readonly IAnalysisRepository _repository;
+    private readonly IGradingEngine _gradingEngine;
+    private readonly IGradeExplanationService _explanationService;
+    private readonly ICriticalDefectEvaluator _criticalEvaluator;
     private CancellationTokenSource? _cts;
+    private bool _suppressDefectRecalc;
 
     public WizardViewModel(
         ICardPreviewService previewService,
         ICardAnalysisPipeline pipeline,
-        IAnalysisRepository repository)
+        IAnalysisRepository repository,
+        IGradingEngine gradingEngine,
+        IGradeExplanationService explanationService,
+        ICriticalDefectEvaluator criticalEvaluator)
     {
         _previewService = previewService;
         _pipeline = pipeline;
         _repository = repository;
+        _gradingEngine = gradingEngine;
+        _explanationService = explanationService;
+        _criticalEvaluator = criticalEvaluator;
         Disclaimer = AppConstants.DisclaimerKo;
         ConfidenceMeaning = AppConstants.ConfidenceMeaningKo;
         ResetAnalysisStages();
@@ -37,6 +49,7 @@ public partial class WizardViewModel : ObservableObject
     public string ConfidenceMeaning { get; }
     public ObservableCollection<string> ProgressLog { get; } = [];
     public ObservableCollection<AnalysisStageItem> AnalysisStages { get; } = [];
+    public ObservableCollection<DefectReviewItem> DefectItems { get; } = [];
 
     [NotifyCanExecuteChangedFor(nameof(NextCommand))]
     [NotifyCanExecuteChangedFor(nameof(BackCommand))]
@@ -67,6 +80,10 @@ public partial class WizardViewModel : ObservableObject
     [ObservableProperty] private string _progressPercentText = "0%";
     [ObservableProperty] private string _progressBarLabel = "분석을 시작합니다...";
     [ObservableProperty] private CardAnalysisResult? _result;
+    [ObservableProperty] private GradingResult? _displayedGrading;
+    [ObservableProperty] private GradeExplanation? _displayedExplanation;
+    [ObservableProperty] private int _originalPredictedGrade;
+    [ObservableProperty] private bool _isWhatIfActive;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string _frontRatioText = "-";
     [ObservableProperty] private string _backRatioText = "-";
@@ -95,11 +112,26 @@ public partial class WizardViewModel : ObservableObject
     public bool IsProgressStep => StepIndex == 6;
     public bool IsResultStep => StepIndex == 7;
     public string NextButtonText => StepIndex == 5 ? "분석 시작" : "다음 / 적용";
+    public string WhatIfHint => IsWhatIfActive
+        ? $"체크를 해제한 결함은 없는 것으로 보고 다시 계산했습니다. 원래 예상은 PSA {OriginalPredictedGrade}입니다."
+        : "결함 체크를 해제하면 그 결함이 없을 때의 예상 PSA 등급을 다시 계산합니다.";
 
     [ObservableProperty] private string? _frontCornerTopLeftPath;
     [ObservableProperty] private string? _frontCornerTopRightPath;
     [ObservableProperty] private string? _frontCornerBottomLeftPath;
     [ObservableProperty] private string? _frontCornerBottomRightPath;
+    [ObservableProperty] private QuadCorners? _frontCornerTopLeftCorners;
+    [ObservableProperty] private QuadCorners? _frontCornerTopRightCorners;
+    [ObservableProperty] private QuadCorners? _frontCornerBottomLeftCorners;
+    [ObservableProperty] private QuadCorners? _frontCornerBottomRightCorners;
+    [ObservableProperty] private double _frontCornerTopLeftWidth;
+    [ObservableProperty] private double _frontCornerTopLeftHeight;
+    [ObservableProperty] private double _frontCornerTopRightWidth;
+    [ObservableProperty] private double _frontCornerTopRightHeight;
+    [ObservableProperty] private double _frontCornerBottomLeftWidth;
+    [ObservableProperty] private double _frontCornerBottomLeftHeight;
+    [ObservableProperty] private double _frontCornerBottomRightWidth;
+    [ObservableProperty] private double _frontCornerBottomRightHeight;
     [ObservableProperty] private string? _frontSurfaceNormalPath;
     [ObservableProperty] private string? _frontSurfaceAngledPath;
     [ObservableProperty] private string? _backSurfaceNormalPath;
@@ -126,6 +158,18 @@ public partial class WizardViewModel : ObservableObject
         OnPropertyChanged(nameof(CanGoNext));
         OnPropertyChanged(nameof(CanGoBack));
     }
+
+    partial void OnIsWhatIfActiveChanged(bool value) => OnPropertyChanged(nameof(WhatIfHint));
+    partial void OnOriginalPredictedGradeChanged(int value) => OnPropertyChanged(nameof(WhatIfHint));
+
+    partial void OnFrontCornerTopLeftPathChanged(string? value) =>
+        BindCornerImage(value, (w, h, q) => { FrontCornerTopLeftWidth = w; FrontCornerTopLeftHeight = h; FrontCornerTopLeftCorners = q; });
+    partial void OnFrontCornerTopRightPathChanged(string? value) =>
+        BindCornerImage(value, (w, h, q) => { FrontCornerTopRightWidth = w; FrontCornerTopRightHeight = h; FrontCornerTopRightCorners = q; });
+    partial void OnFrontCornerBottomLeftPathChanged(string? value) =>
+        BindCornerImage(value, (w, h, q) => { FrontCornerBottomLeftWidth = w; FrontCornerBottomLeftHeight = h; FrontCornerBottomLeftCorners = q; });
+    partial void OnFrontCornerBottomRightPathChanged(string? value) =>
+        BindCornerImage(value, (w, h, q) => { FrontCornerBottomRightWidth = w; FrontCornerBottomRightHeight = h; FrontCornerBottomRightCorners = q; });
 
     partial void OnFrontGuideChanged(CenteringGuide? value) => RecalculateRatios();
     partial void OnBackGuideChanged(CenteringGuide? value) => RecalculateRatios();
@@ -216,6 +260,26 @@ public partial class WizardViewModel : ObservableObject
 
         StatusMessage = "카드 영역을 적용했습니다. 센터링 가이드를 확인하세요.";
         RecalculateRatios();
+    }
+
+    [RelayCommand]
+    private void ResetCornerQuad(string? position)
+    {
+        switch (position)
+        {
+            case "TopLeft" when FrontCornerTopLeftWidth > 0:
+                FrontCornerTopLeftCorners = DefaultInset(FrontCornerTopLeftWidth, FrontCornerTopLeftHeight);
+                break;
+            case "TopRight" when FrontCornerTopRightWidth > 0:
+                FrontCornerTopRightCorners = DefaultInset(FrontCornerTopRightWidth, FrontCornerTopRightHeight);
+                break;
+            case "BottomLeft" when FrontCornerBottomLeftWidth > 0:
+                FrontCornerBottomLeftCorners = DefaultInset(FrontCornerBottomLeftWidth, FrontCornerBottomLeftHeight);
+                break;
+            case "BottomRight" when FrontCornerBottomRightWidth > 0:
+                FrontCornerBottomRightCorners = DefaultInset(FrontCornerBottomRightWidth, FrontCornerBottomRightHeight);
+                break;
+        }
     }
 
     [RelayCommand]
@@ -327,6 +391,12 @@ public partial class WizardViewModel : ObservableObject
             AddSlot(additional, ImageSlotKind.BackSurfaceNormal, BackSurfaceNormalPath);
             AddSlot(additional, ImageSlotKind.BackSurfaceAngled, BackSurfaceAngledPath);
 
+            var cornerQuads = new Dictionary<ImageSlotKind, QuadCorners>();
+            AddQuad(cornerQuads, ImageSlotKind.FrontCornerTopLeft, FrontCornerTopLeftPath, FrontCornerTopLeftCorners);
+            AddQuad(cornerQuads, ImageSlotKind.FrontCornerTopRight, FrontCornerTopRightPath, FrontCornerTopRightCorners);
+            AddQuad(cornerQuads, ImageSlotKind.FrontCornerBottomLeft, FrontCornerBottomLeftPath, FrontCornerBottomLeftCorners);
+            AddQuad(cornerQuads, ImageSlotKind.FrontCornerBottomRight, FrontCornerBottomRightPath, FrontCornerBottomRightCorners);
+
             var input = new CardInput
             {
                 CardName = CardName,
@@ -341,7 +411,8 @@ public partial class WizardViewModel : ObservableObject
                 BackManualCorners = BackCorners,
                 FrontCenteringGuide = FrontGuide,
                 BackCenteringGuide = BackGuide,
-                AdditionalImages = additional
+                AdditionalImages = additional,
+                AdditionalImageCorners = cornerQuads
             };
 
             var progress = new Progress<AnalysisProgress>(ApplyProgress);
@@ -350,6 +421,7 @@ public partial class WizardViewModel : ObservableObject
                 async () => await _pipeline.AnalyzeAsync(input, progress, _cts.Token).ConfigureAwait(false),
                 _cts.Token);
             await _repository.SaveAsync(Result, _cts.Token);
+            BindResult(Result);
             StepIndex = 7;
         }
         catch (OperationCanceledException)
@@ -406,6 +478,90 @@ public partial class WizardViewModel : ObservableObject
         {
             slots[kind] = path;
         }
+    }
+
+    private static void AddQuad(
+        IDictionary<ImageSlotKind, QuadCorners> slots,
+        ImageSlotKind kind,
+        string? path,
+        QuadCorners? corners)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path) && corners is not null)
+        {
+            slots[kind] = corners;
+        }
+    }
+
+    private static void BindCornerImage(string? path, Action<double, double, QuadCorners?> apply)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            apply(0, 0, null);
+            return;
+        }
+
+        var size = BitmapLoader.GetSize(path);
+        apply(size.Width, size.Height, DefaultInset(size.Width, size.Height));
+    }
+
+    private void BindResult(CardAnalysisResult result)
+    {
+        _suppressDefectRecalc = true;
+        foreach (var item in DefectItems)
+        {
+            item.PropertyChanged -= OnDefectItemChanged;
+        }
+
+        DefectItems.Clear();
+        foreach (var defect in result.Defects.OrderByDescending(d => d.Severity).ThenByDescending(d => d.Confidence))
+        {
+            var item = new DefectReviewItem(defect);
+            item.PropertyChanged += OnDefectItemChanged;
+            DefectItems.Add(item);
+        }
+
+        DisplayedGrading = result.Grading;
+        DisplayedExplanation = result.Explanation;
+        OriginalPredictedGrade = result.Grading?.PredictedGrade ?? 0;
+        IsWhatIfActive = false;
+        _suppressDefectRecalc = false;
+    }
+
+    private void OnDefectItemChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DefectReviewItem.IsCounted))
+        {
+            RecalculateGrade();
+        }
+    }
+
+    private void RecalculateGrade()
+    {
+        if (_suppressDefectRecalc || Result is null || !Result.CanComputeGrade)
+        {
+            return;
+        }
+
+        foreach (var item in DefectItems)
+        {
+            item.Defect.ReviewStatus = item.IsCounted
+                ? DefectReviewStatus.AutoDetected
+                : DefectReviewStatus.Ignored;
+        }
+
+        var grading = _gradingEngine.Calculate(Result);
+        var critical = _criticalEvaluator.Evaluate(Result.Defects);
+        if (critical.MaxGrade < grading.PredictedGrade)
+        {
+            grading = GradingEngine.ApplyCriticalCap(grading, critical);
+        }
+
+        Result.Grading = grading;
+        Result.Explanation = _explanationService.Generate(Result, grading);
+        DisplayedGrading = grading;
+        DisplayedExplanation = Result.Explanation;
+        IsWhatIfActive = DefectItems.Any(item => !item.IsCounted);
+        OnPropertyChanged(nameof(Result));
     }
 
     private void ResetAnalysisStages()

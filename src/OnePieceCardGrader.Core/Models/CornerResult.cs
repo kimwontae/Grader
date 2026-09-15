@@ -16,6 +16,7 @@ public sealed class CornerResult
     public double CombinedScore { get; init; }
     public NormalizedRect? Region { get; init; }
     public bool UsedMacroImage { get; init; }
+    public bool UsedManualRegion { get; init; }
     public double WhiteningSeverity { get; init; }
     public double GeometrySeverity { get; init; }
     public WhiteningAnalysisResult? Whitening { get; init; }

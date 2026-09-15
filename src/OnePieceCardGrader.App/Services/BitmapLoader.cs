@@ -20,4 +20,10 @@ public static class BitmapLoader
         image.Freeze();
         return image;
     }
+
+    public static (double Width, double Height) GetSize(string? path)
+    {
+        var image = Load(path);
+        return image is null ? (0, 0) : (image.PixelWidth, image.PixelHeight);
+    }
 }
