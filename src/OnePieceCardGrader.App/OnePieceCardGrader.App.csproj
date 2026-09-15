@@ -30,5 +30,6 @@
   <ItemGroup>
     <None Include="Profiles\psa.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Config\analysis.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Config\image-analysis.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

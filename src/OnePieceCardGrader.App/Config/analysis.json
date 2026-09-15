@@ -39,13 +39,20 @@
   },
   "Corners": {
     "RoiWidthPercent": 0.12,
-    "RoiHeightPercent": 0.12
+    "RoiHeightPercent": 0.12,
+    "WhiteningDelta": 18,
+    "MinWhiteningAreaRatio": 0.0035,
+    "Sensitivity": 0.5
   },
   "Edges": {
     "RoiPercent": 0.05
   },
   "Surface": {
     "ScratchSensitivity": 0.5,
-    "GlareExcludeThreshold": 0.6
+    "GlareExcludeThreshold": 0.6,
+    "MinElongation": 4.2,
+    "MinScratchLengthPx": 16,
+    "TophatKernel": 17,
+    "MaxGlareOverlap": 0.4
   }
 }

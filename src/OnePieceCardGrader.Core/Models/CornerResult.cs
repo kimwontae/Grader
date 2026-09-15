@@ -13,4 +13,11 @@ public sealed class CornerResult
     public double Confidence { get; init; }
     public IReadOnlyList<DetectedDefect> Defects { get; init; } = [];
     public AnalysisStatus Status { get; init; } = AnalysisStatus.NotImplemented;
+    public double CombinedScore { get; init; }
+    public NormalizedRect? Region { get; init; }
+    public bool UsedMacroImage { get; init; }
+    public double WhiteningSeverity { get; init; }
+    public double GeometrySeverity { get; init; }
+    public WhiteningAnalysisResult? Whitening { get; init; }
+    public CornerGeometryResult? Geometry { get; init; }
 }

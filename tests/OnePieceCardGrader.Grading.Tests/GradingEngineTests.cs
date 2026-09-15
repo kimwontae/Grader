@@ -39,6 +39,77 @@ public sealed class GradingEngineTests
     }
 
     [Fact]
+    public void MinorCornerWhitening_ShouldCapPredictedGradeAtNine()
+    {
+        var provider = new JsonGradingProfileProvider(Path.GetTempPath());
+        var engine = new GradingEngine(provider, NullLogger<GradingEngine>.Instance);
+        var front = CenteringMath.FromMargins(50, 50, 50, 50, 0.9);
+        var analysis = new CardAnalysisResult
+        {
+            Centering = new CenteringResult
+            {
+                Status = AnalysisStatus.Completed,
+                Front = front,
+                EstimatedGradeCap = 10
+            },
+            Corners = new CornerAnalysisResult
+            {
+                Status = AnalysisStatus.Completed,
+                ConditionScore = 84,
+                GradeCap = 9,
+                Corners =
+                [
+                    new CornerResult
+                    {
+                        Position = CornerPosition.TopRight,
+                        CombinedScore = 84,
+                        Status = AnalysisStatus.Completed,
+                        Defects =
+                        [
+                            new DetectedDefect
+                            {
+                                Type = DefectType.CornerWhitening,
+                                Severity = DefectSeverity.Minor,
+                                Description = "Top Right: 미세 whitening 검출",
+                                Confidence = 0.7,
+                                GradeCap = 9
+                            }
+                        ]
+                    }
+                ]
+            },
+            Surface = new SurfaceAnalysisResult
+            {
+                Status = AnalysisStatus.Completed,
+                ConditionScore = 94,
+                GradeCap = 10,
+                Confidence = 0.6
+            },
+            Coverage = new AnalysisCoverage { Overall = 70, Centering = 100, Corners = 80, Surface = 60, HasFront = true },
+            Front = new SideImageAnalysis
+            {
+                Quality = new ImageQualityResult { OverallQualityScore = 90, IsAcceptable = true },
+                Detection = new CardDetectionResult { Success = true, Confidence = 0.9 }
+            },
+            Defects =
+            [
+                new DetectedDefect
+                {
+                    Type = DefectType.CornerWhitening,
+                    Severity = DefectSeverity.Minor,
+                    Description = "Top Right: 미세 whitening 검출",
+                    Confidence = 0.7,
+                    GradeCap = 9
+                }
+            ]
+        };
+
+        var result = engine.Calculate(analysis);
+        Assert.True(result.PredictedGrade <= 9);
+        Assert.Equal(AnalysisStatus.Completed, result.Corners.Status);
+    }
+
+    [Fact]
     public void CriticalDefect_ShouldLowerCap()
     {
         var provider = new JsonGradingProfileProvider(Path.GetTempPath());

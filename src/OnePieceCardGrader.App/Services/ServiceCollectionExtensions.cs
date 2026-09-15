@@ -9,12 +9,14 @@ using OnePieceCardGrader.Grading.Rules;
 using OnePieceCardGrader.Grading.Services;
 using OnePieceCardGrader.Imaging;
 using OnePieceCardGrader.Imaging.Centering;
+using OnePieceCardGrader.Imaging.Color;
 using OnePieceCardGrader.Imaging.Corners;
 using OnePieceCardGrader.Imaging.Detection;
 using OnePieceCardGrader.Imaging.Edges;
 using OnePieceCardGrader.Imaging.Pipeline;
 using OnePieceCardGrader.Imaging.Quality;
 using OnePieceCardGrader.Imaging.Surface;
+using OnePieceCardGrader.Imaging.Whitening;
 using OnePieceCardGrader.Infrastructure.Database;
 using OnePieceCardGrader.Infrastructure.FileStorage;
 using OnePieceCardGrader.Infrastructure.Repositories;
@@ -28,18 +30,24 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddGraderApplication(this IServiceCollection services)
     {
         var options = App.LoadJson<AnalysisOptions>(IoPath.Combine("Config", "analysis.json"));
+        var imageAnalysis = App.LoadJson<ImageAnalysisOptions>(IoPath.Combine("Config", "image-analysis.json"));
         services.AddSingleton(options);
+        services.AddSingleton(imageAnalysis);
         services.AddSingleton<IGradingProfileProvider>(_ =>
             new JsonGradingProfileProvider(IoPath.Combine(AppContext.BaseDirectory, "Profiles")));
         services.AddSingleton<IAppSettingsStore, JsonAppSettingsStore>();
         services.AddSingleton<IImageStorage, FileImageStorage>();
+        services.AddSingleton<IColorDifferenceCalculator, Cie76ColorDifferenceCalculator>();
         services.AddSingleton<IImageQualityAnalyzer, ImageQualityAnalyzer>();
         services.AddSingleton<ICardDetector, CardDetector>();
         services.AddSingleton<IPerspectiveCorrector, PerspectiveCorrector>();
         services.AddSingleton<ICenteringAnalyzer, CenteringAnalyzer>();
-        services.AddSingleton<ICornerAnalyzer, NotImplementedCornerAnalyzer>();
-        services.AddSingleton<IEdgeAnalyzer, NotImplementedEdgeAnalyzer>();
-        services.AddSingleton<ISurfaceAnalyzer, NotImplementedSurfaceAnalyzer>();
+        services.AddSingleton<IWhiteningAnalyzer, WhiteningAnalyzer>();
+        services.AddSingleton<ICornerGeometryAnalyzer, CornerGeometryAnalyzer>();
+        services.AddSingleton<IScratchAnalyzer, ScratchAnalyzer>();
+        services.AddSingleton<ICornerAnalyzer, CornerAnalyzer>();
+        services.AddSingleton<IEdgeAnalyzer, EdgeAnalyzer>();
+        services.AddSingleton<ISurfaceAnalyzer, SurfaceAnalyzer>();
         services.AddSingleton<ICriticalDefectEvaluator, CriticalDefectEvaluator>();
         services.AddSingleton<IGradingEngine, GradingEngine>();
         services.AddSingleton<IGradeExplanationService, GradeExplanationService>();

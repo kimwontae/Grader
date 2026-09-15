@@ -39,7 +39,12 @@ public interface ICenteringAnalyzer
 
 public interface ICornerAnalyzer
 {
-    CornerAnalysisResult Analyze(OpenCvImage image, Enums.CornerPosition position);
+    CornerResult Analyze(
+        OpenCvImage image,
+        Enums.CornerPosition position,
+        Enums.CardSide side,
+        bool isMacroImage,
+        NormalizedRect? sourceRegion = null);
 }
 
 public interface IEdgeAnalyzer

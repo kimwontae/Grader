@@ -64,6 +64,9 @@ public sealed class CornerOptions
 {
     public double RoiWidthPercent { get; set; } = 0.12;
     public double RoiHeightPercent { get; set; } = 0.12;
+    public double WhiteningDelta { get; set; } = 18;
+    public double MinWhiteningAreaRatio { get; set; } = 0.0035;
+    public double Sensitivity { get; set; } = 0.5;
 }
 
 public sealed class EdgeOptions
@@ -75,4 +78,8 @@ public sealed class SurfaceOptions
 {
     public double ScratchSensitivity { get; set; } = 0.5;
     public double GlareExcludeThreshold { get; set; } = 0.6;
+    public double MinElongation { get; set; } = 4.2;
+    public int MinScratchLengthPx { get; set; } = 16;
+    public int TophatKernel { get; set; } = 17;
+    public double MaxGlareOverlap { get; set; } = 0.4;
 }

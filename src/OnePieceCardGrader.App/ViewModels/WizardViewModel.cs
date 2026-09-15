@@ -1,3 +1,4 @@
+using System.IO;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -68,18 +69,32 @@ public partial class WizardViewModel : ObservableObject
         1 => "2. 전체 사진",
         2 => "3. 카드 영역 검출",
         3 => "4. 센터링 가이드",
-        4 => "5. 분석",
-        _ => "6. 결과"
+        4 => "5. 모서리 확대 (선택)",
+        5 => "6. 표면/상처 사진 (선택)",
+        6 => "7. 분석",
+        _ => "8. 결과"
     };
 
-    public bool CanGoNext => StepIndex is >= 0 and < 5;
-    public bool CanGoBack => StepIndex > 0 && StepIndex != 4;
+    public bool CanGoNext => StepIndex is >= 0 and < 6;
+    public bool CanGoBack => StepIndex > 0 && StepIndex != 6;
     public bool IsInfoStep => StepIndex == 0;
     public bool IsPhotoStep => StepIndex == 1;
     public bool IsDetectionStep => StepIndex == 2;
     public bool IsCenteringStep => StepIndex == 3;
-    public bool IsProgressStep => StepIndex == 4;
-    public bool IsResultStep => StepIndex == 5;
+    public bool IsCornerStep => StepIndex == 4;
+    public bool IsSurfaceStep => StepIndex == 5;
+    public bool IsProgressStep => StepIndex == 6;
+    public bool IsResultStep => StepIndex == 7;
+    public string NextButtonText => StepIndex == 5 ? "분석 시작" : "다음 / 적용";
+
+    [ObservableProperty] private string? _frontCornerTopLeftPath;
+    [ObservableProperty] private string? _frontCornerTopRightPath;
+    [ObservableProperty] private string? _frontCornerBottomLeftPath;
+    [ObservableProperty] private string? _frontCornerBottomRightPath;
+    [ObservableProperty] private string? _frontSurfaceNormalPath;
+    [ObservableProperty] private string? _frontSurfaceAngledPath;
+    [ObservableProperty] private string? _backSurfaceNormalPath;
+    [ObservableProperty] private string? _backSurfaceAngledPath;
 
     partial void OnStepIndexChanged(int value)
     {
@@ -90,8 +105,11 @@ public partial class WizardViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPhotoStep));
         OnPropertyChanged(nameof(IsDetectionStep));
         OnPropertyChanged(nameof(IsCenteringStep));
+        OnPropertyChanged(nameof(IsCornerStep));
+        OnPropertyChanged(nameof(IsSurfaceStep));
         OnPropertyChanged(nameof(IsProgressStep));
         OnPropertyChanged(nameof(IsResultStep));
+        OnPropertyChanged(nameof(NextButtonText));
     }
 
     partial void OnFrontGuideChanged(CenteringGuide? value) => RecalculateRatios();
@@ -125,7 +143,7 @@ public partial class WizardViewModel : ObservableObject
             await ApplyDetectionAsync();
         }
 
-        if (StepIndex == 3)
+        if (StepIndex == 5)
         {
             await RunAnalysisAsync();
             return;
@@ -200,7 +218,6 @@ public partial class WizardViewModel : ObservableObject
     [RelayCommand]
     private async Task ReanalyzeAsync()
     {
-        StepIndex = 3;
         await RunAnalysisAsync();
     }
 
@@ -275,9 +292,19 @@ public partial class WizardViewModel : ObservableObject
         _cts = new CancellationTokenSource();
         IsBusy = true;
         ProgressLog.Clear();
-        StepIndex = 4;
+        StepIndex = 6;
         try
         {
+            var additional = new Dictionary<ImageSlotKind, string>();
+            AddSlot(additional, ImageSlotKind.FrontCornerTopLeft, FrontCornerTopLeftPath);
+            AddSlot(additional, ImageSlotKind.FrontCornerTopRight, FrontCornerTopRightPath);
+            AddSlot(additional, ImageSlotKind.FrontCornerBottomLeft, FrontCornerBottomLeftPath);
+            AddSlot(additional, ImageSlotKind.FrontCornerBottomRight, FrontCornerBottomRightPath);
+            AddSlot(additional, ImageSlotKind.FrontSurfaceNormal, FrontSurfaceNormalPath);
+            AddSlot(additional, ImageSlotKind.FrontSurfaceAngled, FrontSurfaceAngledPath);
+            AddSlot(additional, ImageSlotKind.BackSurfaceNormal, BackSurfaceNormalPath);
+            AddSlot(additional, ImageSlotKind.BackSurfaceAngled, BackSurfaceAngledPath);
+
             var input = new CardInput
             {
                 CardName = CardName,
@@ -291,7 +318,8 @@ public partial class WizardViewModel : ObservableObject
                 FrontManualCorners = FrontCorners,
                 BackManualCorners = BackCorners,
                 FrontCenteringGuide = FrontGuide,
-                BackCenteringGuide = BackGuide
+                BackCenteringGuide = BackGuide,
+                AdditionalImages = additional
             };
 
             var progress = new Progress<AnalysisProgress>(p =>
@@ -304,17 +332,17 @@ public partial class WizardViewModel : ObservableObject
 
             Result = await _pipeline.AnalyzeAsync(input, progress, _cts.Token);
             await _repository.SaveAsync(Result, _cts.Token);
-            StepIndex = 5;
+            StepIndex = 7;
         }
         catch (OperationCanceledException)
         {
             ErrorMessage = "분석이 취소되었습니다.";
-            StepIndex = 3;
+            StepIndex = 5;
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
-            StepIndex = 3;
+            StepIndex = 5;
         }
         finally
         {
@@ -352,5 +380,13 @@ public partial class WizardViewModel : ObservableObject
             BottomRight = new ImagePoint(width - x, height - y),
             BottomLeft = new ImagePoint(x, height - y)
         };
+    }
+
+    private static void AddSlot(IDictionary<ImageSlotKind, string> slots, ImageSlotKind kind, string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            slots[kind] = path;
+        }
     }
 }

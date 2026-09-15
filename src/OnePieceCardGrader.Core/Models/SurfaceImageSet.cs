@@ -8,4 +8,5 @@ public sealed class SurfaceImageSet
     public string? NormalBackPath { get; init; }
     public string? AngledFrontPath { get; init; }
     public string? AngledBackPath { get; init; }
+    public bool UsedNormalizedFallback { get; init; }
 }

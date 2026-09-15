@@ -73,7 +73,11 @@ WorstCentering = max(max(L, R), max(T, B))
 
 ## Corner 분석 방식
 
-현재 **Not Implemented**. ROI 비율과 인터페이스만 준비되어 있습니다.
+Front 네 모서리(TL/TR/BL/BR) 확대 사진은 선택입니다. 있으면 매크로 이미지를 우선 분석하고, 없으면 정규화된 전체 사진에서 약 12% ROI를 잘라 분석합니다.
+
+- 외곽 밴드와 안쪽 밴드를 비교해 상대 밝기/채도/질감으로 whitening 후보를 찾습니다. 절대 흰색 픽셀만으로 판정하지 않습니다.
+- 신뢰도가 낮으면 "검출"이 아니라 "의심"으로 표시합니다.
+- 가장 낮은 코너 점수와 결함 Grade Cap이 최종 예상에 반영됩니다.
 
 ## Edge 분석 방식
 
@@ -81,7 +85,12 @@ WorstCentering = max(max(L, R), max(T, B))
 
 ## Surface 분석 방식
 
-현재 **Not Implemented**. Glare mask는 Image Quality 단계에서 계산합니다. 반사광을 즉시 스크래치로 판정하지 않습니다.
+Front/Back 정면·사광 사진은 선택입니다. 전용 사진이 없으면 전체 정규화 이미지로 보수적으로 분석하고 신뢰도를 낮춥니다.
+
+- 먼저 glare mask를 만들고 반사 영역은 scratch로 확정하지 않습니다.
+- morphological tophat으로 가늘고 긴 선형 후보만 남깁니다. Canny/Hough line을 scratch로 바로 쓰지 않습니다.
+- 사광 사진이 있으면 ORB+homography로 정렬한 뒤, 사광에서만 강해지는 선에 점수를 더합니다.
+- 자신감이 낮으면 "스크래치 의심"으로만 표시합니다.
 
 ## Grading Engine 설명
 

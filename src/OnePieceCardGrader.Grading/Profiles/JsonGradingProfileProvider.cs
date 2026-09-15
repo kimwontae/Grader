@@ -66,9 +66,19 @@ public sealed class JsonGradingProfileProvider : IGradingProfileProvider
             ["Crease.Major"] = 6,
             ["Dent.Major"] = 7,
             ["MissingMaterial.Major"] = 6,
+            ["CornerWhitening.Trace"] = 10,
             ["CornerWhitening.Minor"] = 9,
+            ["CornerWhitening.Moderate"] = 8,
+            ["CornerWhitening.Major"] = 6,
+            ["CornerRounding.Minor"] = 9,
+            ["CornerRounding.Moderate"] = 8,
             ["EdgeWhitening.Minor"] = 9,
-            ["Scratch.Minor"] = 9
+            ["Scratch.Trace"] = 10,
+            ["Scratch.Minor"] = 9,
+            ["Scratch.Moderate"] = 8,
+            ["Scratch.Major"] = 7,
+            ["Stain.Minor"] = 9,
+            ["Stain.Moderate"] = 8
         },
         GradeThresholds = new Dictionary<string, double>
         {

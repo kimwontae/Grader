@@ -1,0 +1,130 @@
+using OnePieceCardGrader.Core.Calculations;
+using OnePieceCardGrader.Core.Enums;
+using OnePieceCardGrader.Core.Interfaces;
+using OnePieceCardGrader.Core.Models;
+using OnePieceCardGrader.Core.Options;
+using OnePieceCardGrader.Imaging.Detection;
+using OnePieceCardGrader.Imaging.Quality;
+using OnePieceCardGrader.Imaging.Whitening;
+using Microsoft.Extensions.Logging;
+using OpenCvSharp;
+
+namespace OnePieceCardGrader.Imaging.Corners;
+
+public sealed class CornerAnalyzer : ICornerAnalyzer
+{
+    private readonly ImageAnalysisOptions _options;
+    private readonly AnalysisOptions _analysisOptions;
+    private readonly IWhiteningAnalyzer _whiteningAnalyzer;
+    private readonly ICornerGeometryAnalyzer _geometryAnalyzer;
+    private readonly ILogger<CornerAnalyzer> _logger;
+
+    public CornerAnalyzer(
+        ImageAnalysisOptions options,
+        AnalysisOptions analysisOptions,
+        IWhiteningAnalyzer whiteningAnalyzer,
+        ICornerGeometryAnalyzer geometryAnalyzer,
+        ILogger<CornerAnalyzer> logger)
+    {
+        _options = options;
+        _analysisOptions = analysisOptions;
+        _whiteningAnalyzer = whiteningAnalyzer;
+        _geometryAnalyzer = geometryAnalyzer;
+        _logger = logger;
+    }
+
+    public CornerResult Analyze(
+        OpenCvImage image,
+        CornerPosition position,
+        CardSide side,
+        bool isMacroImage,
+        NormalizedRect? sourceRegion = null)
+    {
+        var src = MatAdapter.Unwrap(image);
+        using var expanded = isMacroImage
+            ? ExpandMacro(src, position, _analysisOptions.Normalization)
+            : null;
+        var card = expanded ?? src;
+        var glareDet = GlareDetector.Analyze(card, _analysisOptions.Quality);
+        using var glare = new GlareMask(
+            glareDet.Mask ?? new Mat(card.Size(), MatType.CV_8UC1, Scalar.All(0)),
+            glareDet.CoverageRatio);
+        using var cardMask = CardMaskExtractor.Extract(card, _options.CornerGeometry.CardMaskThreshold);
+        var context = new MeasurementContext
+        {
+            ImageQuality = isMacroImage ? 78 : 70,
+            Focus = 70,
+            CardDetectionConfidence = isMacroImage ? 0.9 : 0.75
+        };
+
+        var whitening = _whiteningAnalyzer.Analyze(
+            card,
+            WhiteningRegionMap.FromCorner(position),
+            glare,
+            context);
+        var geometry = _geometryAnalyzer.Analyze(card, position, cardMask, context);
+        var combinedSeverity = CornerGeometryScoreCalculator.CombineWhiteningAndGeometry(whitening.Severity, geometry.Severity);
+        var combinedScore = CornerGeometryScoreCalculator.ComputeCombinedConditionScore(combinedSeverity, _options.CornerGeometry);
+        var defects = new List<DetectedDefect>();
+        var whiteningDefect = DefectFactory.FromWhitening(
+            whitening,
+            side,
+            position.ToString(),
+            DefectType.CornerWhitening,
+            sourceRegion);
+        if (whiteningDefect is not null)
+        {
+            defects.Add(whiteningDefect);
+        }
+
+        var geometryDefect = DefectFactory.FromGeometry(geometry, side, sourceRegion);
+        if (geometryDefect is not null)
+        {
+            defects.Add(geometryDefect);
+        }
+
+        var severity = DefectFactory.FromSeverity(combinedSeverity);
+        _logger.LogInformation(
+            "Corner {Side} {Position} whitening={W:F3} geometry={G:F3} combined={C:F1} macro={Macro}",
+            side,
+            position,
+            whitening.Severity,
+            geometry.Severity,
+            combinedScore,
+            isMacroImage);
+
+        return new CornerResult
+        {
+            Position = position,
+            Side = side,
+            SharpnessScore = context.Focus,
+            WhiteningScore = whitening.ConditionScore,
+            GeometryScore = geometry.ConditionScore,
+            CombinedScore = combinedScore,
+            Severity = severity,
+            Confidence = Math.Clamp(((whitening.Confidence + geometry.Confidence) / 2.0) / 100.0, 0, 1),
+            Defects = defects,
+            Status = AnalysisStatus.Completed,
+            Region = sourceRegion,
+            UsedMacroImage = isMacroImage,
+            WhiteningSeverity = whitening.Severity,
+            GeometrySeverity = geometry.Severity,
+            Whitening = whitening,
+            Geometry = geometry
+        };
+    }
+
+    private static Mat ExpandMacro(Mat macro, CornerPosition position, NormalizationOptions normalization)
+    {
+        var canvas = new Mat(
+            normalization.CanonicalHeight,
+            normalization.CanonicalWidth,
+            MatType.CV_8UC3,
+            Cv2.Mean(macro));
+        var roi = CornerGeometryAnalyzer.ExtractRoi(canvas.Size(), position, 0.22);
+        using var resized = macro.Resize(roi.Size);
+        using var dest = new Mat(canvas, roi);
+        resized.CopyTo(dest);
+        return canvas;
+    }
+}

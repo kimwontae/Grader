@@ -16,15 +16,15 @@ public sealed class AboutViewModel : ObservableObject
         "Card Detection 및 Perspective Correction",
         "수동 네 점 보정",
         "Centering Analyzer (Auto + Manual Guide)",
+        "선택적 코너 확대 / 표면·사광 사진 업로드",
+        "Corner whitening / geometry 실측 및 Surface scratch 후보 분석",
+        "Edge whitening 실측 (LAB DeltaE + local reference)",
         "PSA 센터링 Grade Cap 및 예상 범위",
         "SQLite 분석 기록, 실제 PSA 등급 입력, JSON Export"
     ];
 
     public IReadOnlyList<string> NotImplemented { get; } =
     [
-        "Corner Analyzer",
-        "Edge Analyzer",
-        "Surface Analyzer (정면/사광 비교)",
         "Template Matching 센터링",
         "ONNX/YOLO 결함 검출 모델",
         "CGC/BGS/TAG 프로파일"

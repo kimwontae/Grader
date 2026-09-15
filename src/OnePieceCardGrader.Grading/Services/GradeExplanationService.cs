@@ -29,12 +29,28 @@ public sealed class GradeExplanationService : IGradeExplanationService
             positives.Add($"Back centering L/R {back.LeftPercent:F1}/{back.RightPercent:F1}, T/B {back.TopPercent:F1}/{back.BottomPercent:F1}.");
         }
 
-        foreach (var note in analysis.Centering.Notes)
+        foreach (var corner in analysis.Corners.Corners)
         {
-            limits.Add(note);
+            if (corner.UsedMacroImage)
+            {
+                positives.Add($"{corner.Position} 확대 사진을 사용했습니다.");
+            }
+
+            foreach (var defect in corner.Defects)
+            {
+                limits.Add(defect.Description);
+            }
         }
 
-        limits.Add("Corner / Edge / Surface 자동 분석은 아직 구현되지 않았습니다. 현재 예상 등급은 센터링과 이미지 품질만 반영합니다.");
+        foreach (var defect in analysis.Surface.Defects.OrderByDescending(d => d.Severity).Take(3))
+        {
+            limits.Add(defect.Description);
+        }
+
+        if (analysis.Surface.UsedMacroFallback)
+        {
+            limits.Add("표면 클로즈업/사광 사진이 없어 전체 사진으로 surface를 분석했습니다. 사광 사진을 추가하면 스크래치 검출 정확도가 올라갑니다.");
+        }
 
         if (analysis.Front?.Quality.GlareCoverageRatio > 0.08)
         {
@@ -45,11 +61,9 @@ public sealed class GradeExplanationService : IGradeExplanationService
             .OrderByDescending(d => d.Severity)
             .ThenByDescending(d => d.Confidence)
             .Take(5)
-            .Select(d => d.Description)
-            .ToList();
+            .Select(d => d.Description);
 
-        limits.InsertRange(0, ordered);
-
+        var combined = ordered.Concat(limits).Distinct().Take(5).ToArray();
         var summary =
             $"PSA 예상 등급 {result.PredictedGrade} (범위 {result.GradeRangeMin}~{result.GradeRangeMax}). " +
             AppConstants.DisclaimerKo;
@@ -57,9 +71,9 @@ public sealed class GradeExplanationService : IGradeExplanationService
         return new GradeExplanation
         {
             Summary = summary,
-            LimitReasons = limits.Distinct().Take(5).ToArray(),
+            LimitReasons = combined,
             PrimaryTenLimiter = result.PrimaryTenLimiter,
-            PositiveNotes = positives
+            PositiveNotes = positives.Distinct().ToArray()
         };
     }
 }

@@ -16,4 +16,5 @@ public sealed class EdgeResult
     public double Confidence { get; init; }
     public IReadOnlyList<DetectedDefect> Defects { get; init; } = [];
     public AnalysisStatus Status { get; init; } = AnalysisStatus.NotImplemented;
+    public WhiteningAnalysisResult? Whitening { get; init; }
 }

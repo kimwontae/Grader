@@ -7,12 +7,8 @@
 - 이미지만으로 PSA 실제 grade를 완벽하게 예측할 수 없습니다.
 - PSA grader의 subjective eye appeal를 완전히 재현할 수 없습니다.
 - 공개된 grading guideline과 측정값을 규칙으로 적용할 뿐, PSA 내부 알고리즘을 복제하지 않습니다.
-- MVP 단계의 예상 등급은 주로 Centering에 의존합니다. Corner / Edge / Surface는 아직 구현되지 않았습니다.
-
-## 이미지 조건
-
 - foil/holo reflection이 surface 분석에 영향을 줄 수 있습니다. 밝은 픽셀을 무조건 결함으로 보지 않지만, 강한 반사는 분석 신뢰도를 낮춥니다.
-- 미세 dent는 일반 정면 사진에서 검출하기 어렵습니다. 사광 사진은 이후 Surface 분석에서 사용됩니다.
+- 미세 dent는 일반 정면 사진에서 검출하기 어렵습니다. 사광 사진은 Surface 분석에서 사용됩니다.
 - sleeve / toploader 상태에서는 분석 정확도가 감소합니다.
 - 해상도 부족, 심한 blur, 카드 일부 잘림, 과도한 원근 왜곡이 있으면 등급을 강제 산출하지 않습니다.
 

@@ -9,6 +9,9 @@ public sealed class CardAnalysisResult
     public SideImageAnalysis? Front { get; init; }
     public SideImageAnalysis? Back { get; init; }
     public CenteringResult Centering { get; init; } = new() { Status = AnalysisStatus.Pending };
+    public CornerAnalysisResult Corners { get; init; } = new() { Status = AnalysisStatus.NotImplemented };
+    public EdgeAnalysisResult Edges { get; init; } = new() { Status = AnalysisStatus.NotImplemented };
+    public SurfaceAnalysisResult Surface { get; init; } = new() { Status = AnalysisStatus.NotImplemented };
     public IReadOnlyList<DetectedDefect> Defects { get; init; } = [];
     public AnalysisCoverage Coverage { get; init; } = new();
     public GradingResult? Grading { get; set; }

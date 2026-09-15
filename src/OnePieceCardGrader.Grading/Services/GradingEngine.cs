@@ -38,21 +38,81 @@ public sealed class GradingEngine : IGradingEngine
             Notes = analysis.Centering.Notes
         };
 
-        var notImplemented = new CategoryGrade
+        var cornerGrade = ToCategory(
+            "Corners",
+            analysis.Corners.Status,
+            analysis.Corners.ConditionScore,
+            analysis.Corners.GradeCap ?? DefectScoreMath.GradeCap(analysis.Corners.Corners.SelectMany(c => c.Defects)),
+            analysis.Corners.Corners.Count == 0 ? 0 : analysis.Corners.Corners.Average(c => c.Confidence),
+            analysis.Corners.UnavailableReason,
+            analysis.Corners.Corners.SelectMany(c => c.Defects).Select(d => d.Description).ToArray());
+
+        var surfaceGrade = ToCategory(
+            "Surface",
+            analysis.Surface.Status,
+            analysis.Surface.ConditionScore,
+            analysis.Surface.GradeCap ?? DefectScoreMath.GradeCap(analysis.Surface.Defects),
+            analysis.Surface.Confidence,
+            analysis.Surface.UnavailableReason,
+            analysis.Surface.Defects.Select(d => d.Description).ToArray());
+
+        var edgeGrade = ToCategory(
+            "Edges",
+            analysis.Edges.Status,
+            analysis.Edges.ConditionScore,
+            analysis.Edges.GradeCap ?? DefectScoreMath.GradeCap(analysis.Edges.Defects),
+            analysis.Edges.Confidence > 1 ? analysis.Edges.Confidence / 100.0 : analysis.Edges.Confidence,
+            analysis.Edges.UnavailableReason,
+            analysis.Edges.Defects.Select(d => d.Description).ToArray());
+
+        var implementedScores = new List<(double Score, double Weight)>();
+        if (analysis.Centering.Status == AnalysisStatus.Completed)
         {
-            Status = AnalysisStatus.NotImplemented,
-            UnavailableReason = "이 항목의 분석은 아직 구현되지 않았습니다.",
-            ConditionScore = 0,
-            Confidence = 0
-        };
+            implementedScores.Add((centeringScore, profile.Weights.Centering));
+        }
 
-        var compositeFromCentering = ScoreToGrade(centeringScore, profile);
-        var predicted = Math.Min(compositeFromCentering, centeringCap);
+        if (analysis.Corners.Status == AnalysisStatus.Completed)
+        {
+            implementedScores.Add((cornerGrade.ConditionScore, profile.Weights.Corners));
+        }
 
-        var unimplementedPenalty = 2;
-        var rangeMin = Math.Max(AppConstants.MinGrade, predicted - unimplementedPenalty);
+        if (analysis.Surface.Status == AnalysisStatus.Completed)
+        {
+            implementedScores.Add((surfaceGrade.ConditionScore, profile.Weights.Surface));
+        }
+
+        if (analysis.Edges.Status == AnalysisStatus.Completed)
+        {
+            implementedScores.Add((edgeGrade.ConditionScore, profile.Weights.Edges));
+        }
+
+        var weighted = implementedScores.Count == 0
+            ? 0
+            : implementedScores.Sum(x => x.Score * x.Weight) / implementedScores.Sum(x => x.Weight);
+        var compositeGrade = ScoreToGrade(weighted, profile);
+        var predicted = Math.Min(compositeGrade, centeringCap);
+        if (cornerGrade.GradeCap is int cornerCap)
+        {
+            predicted = Math.Min(predicted, cornerCap);
+        }
+
+        if (surfaceGrade.GradeCap is int surfaceCap)
+        {
+            predicted = Math.Min(predicted, surfaceCap);
+        }
+
+        if (edgeGrade.GradeCap is int edgeCap)
+        {
+            predicted = Math.Min(predicted, edgeCap);
+        }
+
+        var unimplemented = analysis.Corners.Status != AnalysisStatus.Completed
+                            || analysis.Surface.Status != AnalysisStatus.Completed
+                            || analysis.Edges.Status != AnalysisStatus.Completed;
+        var rangeMin = Math.Max(AppConstants.MinGrade, predicted - (unimplemented ? 1 : 0));
         var rangeMax = predicted;
-        var borderline = IsBorderline(analysis.Centering.Front, analysis.Centering.Back, profile);
+        var borderline = IsBorderline(analysis.Centering.Front, analysis.Centering.Back, profile)
+                         || Math.Abs(weighted - ThresholdFor(predicted, profile)) <= 2;
         if (borderline)
         {
             rangeMax = Math.Min(AppConstants.MaxGrade, predicted + 1);
@@ -66,7 +126,25 @@ public sealed class GradingEngine : IGradingEngine
             reasons.Add($"센터링 worst ratio가 PSA 10 기준을 초과하여 예상 상한이 {centeringCap}입니다.");
         }
 
-        reasons.Add("Corner / Edge / Surface 분석이 아직 구현되지 않아 최종 예상은 센터링 중심으로 보수적으로 산출되었습니다.");
+        foreach (var note in cornerGrade.Notes.Take(3))
+        {
+            reasons.Add(note);
+        }
+
+        foreach (var note in surfaceGrade.Notes.Take(3))
+        {
+            reasons.Add(note);
+        }
+
+        foreach (var note in edgeGrade.Notes.Take(3))
+        {
+            reasons.Add(note);
+        }
+
+        if (analysis.Corners.Status != AnalysisStatus.Completed)
+        {
+            reasons.Add("Corner 확대 사진이 없으면 전체 사진 ROI로 분석하며 신뢰도가 낮아집니다.");
+        }
 
         _logger.LogInformation(
             "Grading engine predicted {Grade} (range {Min}-{Max}, confidence {Confidence:F0})",
@@ -75,6 +153,16 @@ public sealed class GradingEngine : IGradingEngine
             rangeMax,
             confidence);
 
+        var tenLimiter = analysis.Defects
+                             .Where(d => (d.GradeCap ?? 10) < 10)
+                             .OrderBy(d => d.GradeCap ?? 10)
+                             .ThenByDescending(d => d.Severity)
+                             .Select(d => d.Description)
+                             .FirstOrDefault()
+                         ?? (centeringCap < 10
+                             ? "센터링이 PSA 10 공개 기준 범위를 벗어났습니다."
+                             : null);
+
         return new GradingResult
         {
             PredictedGrade = predicted,
@@ -82,18 +170,35 @@ public sealed class GradingEngine : IGradingEngine
             GradeRangeMax = Math.Max(rangeMax, predicted),
             AnalysisConfidence = confidence,
             Centering = centeringGrade,
-            Corners = notImplemented with { Name = "Corners" },
-            Edges = notImplemented with { Name = "Edges" },
-            Surface = notImplemented with { Name = "Surface" },
+            Corners = cornerGrade,
+            Edges = edgeGrade,
+            Surface = surfaceGrade,
             Defects = analysis.Defects,
-            GradeLimitReasons = reasons,
-            Summary = $"센터링 기준 예상 PSA {predicted} (범위 {rangeMin}~{Math.Max(rangeMax, predicted)})",
+            GradeLimitReasons = reasons.Distinct().ToArray(),
+            Summary = $"예상 PSA {predicted} (범위 {rangeMin}~{Math.Max(rangeMax, predicted)})",
             IsBorderline = borderline,
-            PrimaryTenLimiter = centeringCap < 10
-                ? "센터링이 PSA 10 공개 기준 범위를 벗어났습니다."
-                : "Corner/Edge/Surface가 미구현이므로 PSA 10을 확정할 수 없습니다."
+            PrimaryTenLimiter = tenLimiter
         };
     }
+
+    private static CategoryGrade ToCategory(
+        string name,
+        AnalysisStatus status,
+        double score,
+        int? cap,
+        double confidence,
+        string? unavailable,
+        IReadOnlyList<string> notes) =>
+        new()
+        {
+            Name = name,
+            Status = status,
+            ConditionScore = score,
+            GradeCap = status == AnalysisStatus.Completed ? cap : null,
+            Confidence = confidence,
+            UnavailableReason = unavailable,
+            Notes = notes
+        };
 
     private static int ScoreToGrade(double score, GradingProfile profile)
     {
@@ -107,6 +212,9 @@ public sealed class GradingEngine : IGradingEngine
 
         return 1;
     }
+
+    private static double ThresholdFor(int grade, GradingProfile profile) =>
+        profile.GradeThresholds.TryGetValue(grade.ToString(), out var value) ? value : 0;
 
     private static bool IsBorderline(CenteringMeasurement? front, CenteringMeasurement? back, GradingProfile profile)
     {
@@ -140,7 +248,14 @@ public sealed class GradingEngine : IGradingEngine
         var coverage = Math.Clamp(analysis.Coverage.Overall / 100.0, 0.2, 1.0);
         var backBonus = analysis.Back is null ? 0.85 : 1.0;
         var centeringConfidence = analysis.Centering.Front?.Confidence ?? 0.4;
-        var value = quality * detection * Math.Max(coverage, 0.25) * backBonus * (0.5 + (centeringConfidence * 0.5));
+        var cornerConfidence = analysis.Corners.Status == AnalysisStatus.Completed
+            ? 0.5 + (analysis.Corners.Corners.Count(c => c.UsedMacroImage) * 0.08)
+            : 0.4;
+        var surfaceConfidence = analysis.Surface.Status == AnalysisStatus.Completed
+            ? analysis.Surface.Confidence
+            : 0.4;
+        var value = quality * detection * Math.Max(coverage, 0.25) * backBonus
+                    * (0.4 + (centeringConfidence * 0.25) + (cornerConfidence * 0.2) + (surfaceConfidence * 0.15));
         return Math.Clamp(value * 100.0, 5, 95);
     }
 }

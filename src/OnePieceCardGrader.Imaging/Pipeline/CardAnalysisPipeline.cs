@@ -4,8 +4,14 @@ using OnePieceCardGrader.Core.Enums;
 using OnePieceCardGrader.Core.Interfaces;
 using OnePieceCardGrader.Core.Models;
 using OnePieceCardGrader.Core.Options;
+using OnePieceCardGrader.Imaging;
+using OnePieceCardGrader.Imaging.Corners;
+using OnePieceCardGrader.Imaging.Detection;
 using OnePieceCardGrader.Imaging.Preprocessing;
+using OnePieceCardGrader.Imaging.Quality;
+using OnePieceCardGrader.Imaging.Surface;
 using OnePieceCardGrader.Imaging.Visualization;
+using OnePieceCardGrader.Imaging.Whitening;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 
@@ -17,12 +23,17 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
     private readonly ICardDetector _cardDetector;
     private readonly IPerspectiveCorrector _perspectiveCorrector;
     private readonly ICenteringAnalyzer _centeringAnalyzer;
+    private readonly ICornerAnalyzer _cornerAnalyzer;
+    private readonly IWhiteningAnalyzer _whiteningAnalyzer;
+    private readonly ICornerGeometryAnalyzer _geometryAnalyzer;
+    private readonly IScratchAnalyzer _scratchAnalyzer;
     private readonly ICriticalDefectEvaluator _criticalEvaluator;
     private readonly IGradingEngine _gradingEngine;
     private readonly IGradeExplanationService _explanationService;
     private readonly IImageStorage _imageStorage;
     private readonly IAppSettingsStore _settingsStore;
     private readonly AnalysisOptions _baseOptions;
+    private readonly ImageAnalysisOptions _imageAnalysisOptions;
     private readonly IGradingProfileProvider _profileProvider;
     private readonly ILogger<CardAnalysisPipeline> _logger;
 
@@ -31,12 +42,17 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         ICardDetector cardDetector,
         IPerspectiveCorrector perspectiveCorrector,
         ICenteringAnalyzer centeringAnalyzer,
+        ICornerAnalyzer cornerAnalyzer,
+        IWhiteningAnalyzer whiteningAnalyzer,
+        ICornerGeometryAnalyzer geometryAnalyzer,
+        IScratchAnalyzer scratchAnalyzer,
         ICriticalDefectEvaluator criticalEvaluator,
         IGradingEngine gradingEngine,
         IGradeExplanationService explanationService,
         IImageStorage imageStorage,
         IAppSettingsStore settingsStore,
         AnalysisOptions baseOptions,
+        ImageAnalysisOptions imageAnalysisOptions,
         IGradingProfileProvider profileProvider,
         ILogger<CardAnalysisPipeline> logger)
     {
@@ -44,12 +60,17 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         _cardDetector = cardDetector;
         _perspectiveCorrector = perspectiveCorrector;
         _centeringAnalyzer = centeringAnalyzer;
+        _cornerAnalyzer = cornerAnalyzer;
+        _whiteningAnalyzer = whiteningAnalyzer;
+        _geometryAnalyzer = geometryAnalyzer;
+        _scratchAnalyzer = scratchAnalyzer;
         _criticalEvaluator = criticalEvaluator;
         _gradingEngine = gradingEngine;
         _explanationService = explanationService;
         _imageStorage = imageStorage;
         _settingsStore = settingsStore;
         _baseOptions = baseOptions;
+        _imageAnalysisOptions = imageAnalysisOptions;
         _profileProvider = profileProvider;
         _logger = logger;
     }
@@ -68,9 +89,10 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         var analysisId = Guid.NewGuid();
         var settings = _settingsStore.Load();
         var options = MergeOptions(settings);
-        var debug = new FileDebugImageSink(
-            Path.Combine(_imageStorage.GetAnalysisDirectory(analysisId), "debug"),
-            settings.DeveloperMode && settings.SaveDebugImages);
+        var imageOptions = ApplySensitivity(_imageAnalysisOptions, settings);
+        var debugDir = Path.Combine(_imageStorage.GetAnalysisDirectory(analysisId), "debug");
+        var debug = new FileDebugImageSink(debugDir, settings.DeveloperMode && settings.SaveDebugImages);
+        var analysisDebug = new DirectoryDebugSink(debugDir, settings.DeveloperMode && settings.SaveDebugImages);
 
         Report(progress, "이미지 품질 확인", "Front 이미지를 불러오는 중", 5);
         var frontOriginalPath = await _imageStorage.SaveOriginalAsync(analysisId, "front_original", input.FrontImagePath, cancellationToken);
@@ -157,11 +179,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                     notes.Add("자동 센터링 분석 신뢰도가 낮습니다. 가이드를 확인해 주세요.");
                 }
 
-                using var overlay = CenteringOverlayRenderer.Render(normalizedFront, frontCentering, new Scalar(60, 200, 255));
-                var overlayBytes = ImageCodec.EncodeJpeg(overlay);
-                var overlayPath = await _imageStorage.SaveProcessedAsync(analysisId, "front_overlay.jpg", overlayBytes, cancellationToken);
-                frontSide = CloneWithOverlay(frontSide, overlayPath);
-                debug.Save("04_centering_lines_front", MatAdapter.Wrap(overlay));
+                debug.Save("04_centering_lines_front", MatAdapter.Wrap(normalizedFront));
             }
 
             if (backSide?.NormalizedPath is not null)
@@ -174,15 +192,13 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 }
 
                 backCentering = _centeringAnalyzer.Analyze(MatAdapter.Wrap(normalizedBack), CardSide.Back, backGuide);
-                using var overlay = CenteringOverlayRenderer.Render(normalizedBack, backCentering, new Scalar(60, 200, 255));
-                var overlayBytes = ImageCodec.EncodeJpeg(overlay);
-                var overlayPath = await _imageStorage.SaveProcessedAsync(analysisId, "back_overlay.jpg", overlayBytes, cancellationToken);
-                backSide = CloneWithOverlay(backSide, overlayPath);
             }
 
             var profile = _profileProvider.GetProfile(AppConstants.DefaultProfileName);
             var centeringCap = CenteringGradeCapCalculator.CalculateCap(frontCentering, backCentering, profile);
             _logger.LogInformation("Final centering grade cap = {Cap}", centeringCap);
+
+            var additional = await PersistAdditionalImagesAsync(analysisId, input, cancellationToken);
 
             var centeringResult = new CenteringResult
             {
@@ -194,11 +210,16 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 ModeUsed = mode
             };
 
-            Report(progress, "코너 분석", "Corner 분석은 아직 구현되지 않았습니다.", 70);
-            Report(progress, "엣지 분석", "Edge 분석은 아직 구현되지 않았습니다.", 75);
-            Report(progress, "표면 분석", "Surface 분석은 아직 구현되지 않았습니다.", 80);
+            Report(progress, "코너 분석", "모서리 whitening/geometry를 검사하는 중", 70);
+            var cornerAnalysis = AnalyzeCorners(frontSide, additional, options, imageOptions, analysisDebug, cancellationToken);
 
-            var coverage = BuildCoverage(input, frontSide, backSide);
+            Report(progress, "엣지 분석", "Edge whitening을 검사하는 중", 75);
+            var edgeAnalysis = AnalyzeEdges(frontSide, imageOptions, analysisDebug, cancellationToken);
+
+            Report(progress, "표면 분석", "스크래치 후보를 검사하는 중", 80);
+            var surfaceAnalysis = AnalyzeSurface(frontSide, backSide, additional, analysisDebug);
+
+            var coverage = BuildCoverage(input, frontSide, backSide, cornerAnalysis, edgeAnalysis, surfaceAnalysis);
             var defects = new List<DetectedDefect>();
             if (frontCentering is not null && centeringCap < 10)
             {
@@ -221,6 +242,34 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 });
             }
 
+            defects.AddRange(cornerAnalysis.Corners.SelectMany(c => c.Defects));
+            defects.AddRange(edgeAnalysis.Defects);
+            defects.AddRange(surfaceAnalysis.Defects);
+
+            if (frontSide.NormalizedPath is not null)
+            {
+                using var normalizedFront = Cv2.ImRead(frontSide.NormalizedPath, ImreadModes.Color);
+                using var overlay = frontCentering is null
+                    ? normalizedFront.Clone()
+                    : CenteringOverlayRenderer.Render(normalizedFront, frontCentering, new Scalar(60, 200, 255));
+                DefectOverlayRenderer.Draw(overlay, defects.Where(d => d.Side == CardSide.Front));
+                var overlayBytes = ImageCodec.EncodeJpeg(overlay);
+                var overlayPath = await _imageStorage.SaveProcessedAsync(analysisId, "front_overlay.jpg", overlayBytes, cancellationToken);
+                frontSide = CloneWithOverlay(frontSide, overlayPath);
+            }
+
+            if (backSide?.NormalizedPath is not null)
+            {
+                using var normalizedBack = Cv2.ImRead(backSide.NormalizedPath, ImreadModes.Color);
+                using var overlay = backCentering is null
+                    ? normalizedBack.Clone()
+                    : CenteringOverlayRenderer.Render(normalizedBack, backCentering, new Scalar(60, 200, 255));
+                DefectOverlayRenderer.Draw(overlay, defects.Where(d => d.Side == CardSide.Back));
+                var overlayBytes = ImageCodec.EncodeJpeg(overlay);
+                var overlayPath = await _imageStorage.SaveProcessedAsync(analysisId, "back_overlay.jpg", overlayBytes, cancellationToken);
+                backSide = CloneWithOverlay(backSide, overlayPath);
+            }
+
             var critical = _criticalEvaluator.Evaluate(defects);
             var result = new CardAnalysisResult
             {
@@ -229,12 +278,15 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 Front = frontSide,
                 Back = backSide,
                 Centering = centeringResult,
+                Corners = cornerAnalysis,
+                Edges = edgeAnalysis,
+                Surface = surfaceAnalysis,
                 Defects = defects,
                 Coverage = coverage,
                 CanComputeGrade = canCompute,
                 BlockingReason = blocking,
                 Warnings = warnings.Distinct().ToArray(),
-                DebugImagePaths = debug.SnapshotPaths()
+                DebugImagePaths = MergeDebug(debug.SnapshotPaths(), analysisDebug.SnapshotPaths())
             };
 
             if (canCompute)
@@ -347,26 +399,371 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         _baseOptions.Quality.MinOverallQuality = settings.MinimumImageQuality;
         _baseOptions.Centering.LowConfidenceThreshold =
             Math.Clamp(0.55 - ((settings.CenteringAutoDetectSensitivity - 0.5) * 0.2), 0.3, 0.8);
-        _baseOptions.Centering.PeakProminence =
-            Math.Clamp(1.35 - ((settings.CenteringAutoDetectSensitivity - 0.5) * 0.3), 1.05, 1.8);
+        _baseOptions.Corners.Sensitivity = settings.CornerDetectionSensitivity;
+        _baseOptions.Surface.ScratchSensitivity = settings.SurfaceScratchSensitivity;
         return _baseOptions;
     }
 
-    private static AnalysisCoverage BuildCoverage(CardInput input, SideImageAnalysis front, SideImageAnalysis? back)
+    private async Task<Dictionary<ImageSlotKind, string>> PersistAdditionalImagesAsync(
+        Guid analysisId,
+        CardInput input,
+        CancellationToken cancellationToken)
+    {
+        var saved = new Dictionary<ImageSlotKind, string>();
+        foreach (var pair in input.AdditionalImages)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Value) || !File.Exists(pair.Value))
+            {
+                continue;
+            }
+
+            saved[pair.Key] = await _imageStorage.SaveOriginalAsync(
+                analysisId,
+                pair.Key.ToString().ToLowerInvariant(),
+                pair.Value,
+                cancellationToken);
+        }
+
+        return saved;
+    }
+
+    private CornerAnalysisResult AnalyzeCorners(
+        SideImageAnalysis front,
+        IReadOnlyDictionary<ImageSlotKind, string> additional,
+        AnalysisOptions options,
+        ImageAnalysisOptions imageOptions,
+        IAnalysisDebugSink analysisDebug,
+        CancellationToken cancellationToken)
+    {
+        if (front.NormalizedPath is null || !File.Exists(front.NormalizedPath))
+        {
+            return new CornerAnalysisResult
+            {
+                Status = AnalysisStatus.Skipped,
+                UnavailableReason = "정규화된 Front 이미지가 없어 코너 분석을 건너뛰었습니다."
+            };
+        }
+
+        using var normalized = Cv2.ImRead(front.NormalizedPath, ImreadModes.Color);
+        var glareDet = GlareDetector.Analyze(normalized, options.Quality);
+        using var glare = new GlareMask(
+            glareDet.Mask ?? new Mat(normalized.Size(), MatType.CV_8UC1, Scalar.All(0)),
+            glareDet.CoverageRatio);
+        using var cardMask = CardMaskExtractor.Extract(normalized, imageOptions.CornerGeometry.CardMaskThreshold);
+        var context = new MeasurementContext
+        {
+            ImageQuality = front.Quality.OverallQualityScore,
+            Focus = front.Quality.FocusScore,
+            Exposure = front.Quality.ExposureScore,
+            CardDetectionConfidence = front.Detection.Confidence
+        };
+
+        var results = new List<CornerResult>();
+        foreach (var position in Enum.GetValues<CornerPosition>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var slot = position switch
+            {
+                CornerPosition.TopLeft => ImageSlotKind.FrontCornerTopLeft,
+                CornerPosition.TopRight => ImageSlotKind.FrontCornerTopRight,
+                CornerPosition.BottomRight => ImageSlotKind.FrontCornerBottomRight,
+                _ => ImageSlotKind.FrontCornerBottomLeft
+            };
+
+            var roi = CornerRoi.FromNormalized(normalized.Width, normalized.Height, position, options.Corners);
+            var region = CornerRoi.ToNormalized(roi, normalized.Width, normalized.Height);
+            var hasMacro = additional.TryGetValue(slot, out var macroPath) && !string.IsNullOrWhiteSpace(macroPath);
+            if (hasMacro)
+            {
+                using var macro = ExifOrientation.LoadOriented(macroPath!);
+                results.Add(_cornerAnalyzer.Analyze(MatAdapter.Wrap(macro), position, CardSide.Front, true, region));
+            }
+            else
+            {
+                var whiteningDebug = new PrefixedAnalysisDebugSink(analysisDebug, $"whitening/{position}");
+                var geometryDebug = new PrefixedAnalysisDebugSink(analysisDebug, $"corners/{position}");
+                var whitening = _whiteningAnalyzer.Analyze(
+                    normalized,
+                    WhiteningRegionMap.FromCorner(position),
+                    glare,
+                    context,
+                    whiteningDebug);
+                var geometry = _geometryAnalyzer.Analyze(normalized, position, cardMask, context, geometryDebug);
+                var combinedSeverity = CornerGeometryScoreCalculator.CombineWhiteningAndGeometry(whitening.Severity, geometry.Severity);
+                var combinedScore = CornerGeometryScoreCalculator.ComputeCombinedConditionScore(
+                    combinedSeverity,
+                    imageOptions.CornerGeometry);
+                var defects = new List<DetectedDefect>();
+                var wDefect = DefectFactory.FromWhitening(whitening, CardSide.Front, position.ToString(), DefectType.CornerWhitening, region);
+                if (wDefect is not null)
+                {
+                    defects.Add(wDefect);
+                }
+
+                var gDefect = DefectFactory.FromGeometry(geometry, CardSide.Front, region);
+                if (gDefect is not null)
+                {
+                    defects.Add(gDefect);
+                }
+
+                results.Add(new CornerResult
+                {
+                    Position = position,
+                    Side = CardSide.Front,
+                    SharpnessScore = front.Quality.FocusScore,
+                    WhiteningScore = whitening.ConditionScore,
+                    GeometryScore = geometry.ConditionScore,
+                    CombinedScore = combinedScore,
+                    Severity = DefectFactory.FromSeverity(combinedSeverity),
+                    Confidence = Math.Clamp(((whitening.Confidence + geometry.Confidence) / 2.0) / 100.0, 0, 1),
+                    Defects = defects,
+                    Status = AnalysisStatus.Completed,
+                    Region = region,
+                    UsedMacroImage = false,
+                    WhiteningSeverity = whitening.Severity,
+                    GeometrySeverity = geometry.Severity,
+                    Whitening = whitening,
+                    Geometry = geometry
+                });
+            }
+        }
+
+        var scores = results.Select(r => r.CombinedScore).ToArray();
+        return new CornerAnalysisResult
+        {
+            Status = AnalysisStatus.Completed,
+            Corners = results,
+            ConditionScore = CornerGeometryScoreCalculator.ComputeFinalCornerScore(scores, imageOptions.CornerGeometry),
+            Confidence = results.Count == 0 ? 0 : results.Average(r => r.Confidence),
+            GradeCap = DefectScoreMath.GradeCap(results.SelectMany(r => r.Defects))
+        };
+    }
+
+    private EdgeAnalysisResult AnalyzeEdges(
+        SideImageAnalysis front,
+        ImageAnalysisOptions imageOptions,
+        IAnalysisDebugSink analysisDebug,
+        CancellationToken cancellationToken)
+    {
+        if (front.NormalizedPath is null || !File.Exists(front.NormalizedPath))
+        {
+            return new EdgeAnalysisResult
+            {
+                Status = AnalysisStatus.Skipped,
+                UnavailableReason = "정규화된 Front 이미지가 없어 엣지 분석을 건너뛰었습니다."
+            };
+        }
+
+        using var normalized = Cv2.ImRead(front.NormalizedPath, ImreadModes.Color);
+        var glareDet = GlareDetector.Analyze(normalized, _baseOptions.Quality);
+        using var glare = new GlareMask(
+            glareDet.Mask ?? new Mat(normalized.Size(), MatType.CV_8UC1, Scalar.All(0)),
+            glareDet.CoverageRatio);
+        var context = new MeasurementContext
+        {
+            ImageQuality = front.Quality.OverallQualityScore,
+            Focus = front.Quality.FocusScore,
+            Exposure = front.Quality.ExposureScore,
+            CardDetectionConfidence = front.Detection.Confidence
+        };
+
+        var edges = new List<EdgeResult>();
+        var defects = new List<DetectedDefect>();
+        foreach (var position in Enum.GetValues<EdgePosition>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var whitening = _whiteningAnalyzer.Analyze(
+                normalized,
+                WhiteningRegionMap.FromEdge(position),
+                glare,
+                context,
+                new PrefixedAnalysisDebugSink(analysisDebug, $"whitening/{position}"));
+            var defect = DefectFactory.FromWhitening(
+                whitening,
+                CardSide.Front,
+                position.ToString(),
+                DefectType.EdgeWhitening,
+                null);
+            var localDefects = defect is null ? Array.Empty<DetectedDefect>() : new[] { defect };
+            defects.AddRange(localDefects);
+            edges.Add(new EdgeResult
+            {
+                Position = position,
+                Side = CardSide.Front,
+                Score = whitening.ConditionScore,
+                WhiteningCount = whitening.DefectCount,
+                AffectedLengthPx = whitening.WhiteningLengthRatio,
+                Severity = DefectFactory.FromSeverity(whitening.Severity),
+                Confidence = whitening.Confidence / 100.0,
+                Defects = localDefects,
+                Status = AnalysisStatus.Completed,
+                Whitening = whitening
+            });
+        }
+
+        var condition = CornerGeometryScoreCalculator.ComputeFinalCornerScore(
+            edges.Select(e => e.Score).ToArray(),
+            imageOptions.CornerGeometry);
+        return new EdgeAnalysisResult
+        {
+            Status = AnalysisStatus.Completed,
+            Edges = edges,
+            ConditionScore = condition,
+            Confidence = edges.Count == 0 ? 0 : edges.Average(e => e.Confidence),
+            GradeCap = DefectScoreMath.GradeCap(defects),
+            Defects = defects
+        };
+    }
+
+    private SurfaceAnalysisResult AnalyzeSurface(
+        SideImageAnalysis front,
+        SideImageAnalysis? back,
+        IReadOnlyDictionary<ImageSlotKind, string> additional,
+        IAnalysisDebugSink analysisDebug)
+    {
+        var hasDedicated = additional.ContainsKey(ImageSlotKind.FrontSurfaceNormal)
+                           || additional.ContainsKey(ImageSlotKind.FrontSurfaceAngled)
+                           || additional.ContainsKey(ImageSlotKind.BackSurfaceNormal)
+                           || additional.ContainsKey(ImageSlotKind.BackSurfaceAngled);
+        var set = new SurfaceImageSet
+        {
+            NormalFrontPath = additional.GetValueOrDefault(ImageSlotKind.FrontSurfaceNormal) ?? front.NormalizedPath,
+            AngledFrontPath = additional.GetValueOrDefault(ImageSlotKind.FrontSurfaceAngled),
+            NormalBackPath = additional.GetValueOrDefault(ImageSlotKind.BackSurfaceNormal) ?? back?.NormalizedPath,
+            AngledBackPath = additional.GetValueOrDefault(ImageSlotKind.BackSurfaceAngled),
+            UsedNormalizedFallback = !hasDedicated
+        };
+
+        var context = new MeasurementContext
+        {
+            ImageQuality = front.Quality.OverallQualityScore,
+            Focus = front.Quality.FocusScore,
+            Exposure = front.Quality.ExposureScore,
+            CardDetectionConfidence = front.Detection.Confidence,
+            HasAngledLight = set.AngledFrontPath is not null || set.AngledBackPath is not null
+        };
+
+        var frontScratch = string.IsNullOrWhiteSpace(set.NormalFrontPath)
+            ? null
+            : _scratchAnalyzer.Analyze(set, CardSide.Front, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/front"));
+        var backScratch = string.IsNullOrWhiteSpace(set.NormalBackPath)
+            ? null
+            : _scratchAnalyzer.Analyze(set, CardSide.Back, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/back"));
+
+        if (frontScratch is null && backScratch is null)
+        {
+            return new SurfaceAnalysisResult
+            {
+                Status = AnalysisStatus.Skipped,
+                UnavailableReason = "Surface 분석용 이미지가 없습니다.",
+                Confidence = 0
+            };
+        }
+
+        var defects = new List<DetectedDefect>();
+        if (frontScratch is not null)
+        {
+            defects.AddRange(frontScratch.Candidates.Select(c => DefectFactory.FromScratch(c, CardSide.Front)));
+        }
+
+        if (backScratch is not null)
+        {
+            defects.AddRange(backScratch.Candidates.Select(c => DefectFactory.FromScratch(c, CardSide.Back)));
+        }
+
+        var frontScore = frontScratch?.ConditionScore ?? 100;
+        var backScore = backScratch?.ConditionScore ?? 100;
+        var usedAngled = (frontScratch?.Alignment?.UsedAngledComparison ?? false)
+                         || (backScratch?.Alignment?.UsedAngledComparison ?? false);
+        var confidence = Math.Max(frontScratch?.Confidence ?? 0, backScratch?.Confidence ?? 0) / 100.0
+                         * (set.UsedNormalizedFallback ? 0.8 : 1.0);
+
+        return new SurfaceAnalysisResult
+        {
+            Status = AnalysisStatus.Completed,
+            FrontScore = frontScore,
+            BackScore = backScore,
+            ConditionScore = Math.Min(frontScore, backScore),
+            GradeCap = DefectScoreMath.GradeCap(defects),
+            Confidence = Math.Clamp(confidence, 0.15, 0.95),
+            Defects = defects,
+            UsedAngledLight = usedAngled,
+            UsedMacroFallback = set.UsedNormalizedFallback,
+            FrontScratch = frontScratch,
+            BackScratch = backScratch
+        };
+    }
+
+    private static AnalysisCoverage BuildCoverage(
+        CardInput input,
+        SideImageAnalysis front,
+        SideImageAnalysis? back,
+        CornerAnalysisResult corners,
+        EdgeAnalysisResult edges,
+        SurfaceAnalysisResult surface)
     {
         var centering = (front.NormalizedPath is not null ? 0.6 : 0) + (back?.NormalizedPath is not null ? 0.4 : 0);
+        var macroCorners = new[]
+        {
+            ImageSlotKind.FrontCornerTopLeft,
+            ImageSlotKind.FrontCornerTopRight,
+            ImageSlotKind.FrontCornerBottomLeft,
+            ImageSlotKind.FrontCornerBottomRight
+        }.Count(slot => input.AdditionalImages.ContainsKey(slot));
+        var cornerCoverage = corners.Status == AnalysisStatus.Completed
+            ? 55 + (macroCorners * 11.25)
+            : 0;
+        var edgeCoverage = edges.Status == AnalysisStatus.Completed ? 80 : 0;
+        var surfaceCoverage = surface.Status == AnalysisStatus.Completed
+            ? (surface.UsedAngledLight ? 90 : surface.UsedMacroFallback ? 55 : 80)
+            : 0;
+        var overall = (centering * 30)
+                      + (Math.Min(cornerCoverage, 100) / 100.0 * 25)
+                      + (edgeCoverage / 100.0 * 15)
+                      + (surfaceCoverage / 100.0 * 30);
         return new AnalysisCoverage
         {
             Centering = centering * 100,
-            Corners = 0,
-            Edges = 0,
-            Surface = 0,
-            Overall = centering * 35,
+            Corners = Math.Min(cornerCoverage, 100),
+            Edges = edgeCoverage,
+            Surface = surfaceCoverage,
+            Overall = Math.Clamp(overall, 0, 100),
             HasFront = true,
             HasBack = back is not null,
             HasAngledSurface = input.AdditionalImages.ContainsKey(ImageSlotKind.FrontSurfaceAngled)
-                               || input.AdditionalImages.ContainsKey(ImageSlotKind.BackSurfaceAngled)
+                               || input.AdditionalImages.ContainsKey(ImageSlotKind.BackSurfaceAngled),
+            MacroCornerCount = macroCorners
         };
+    }
+
+    private static ImageAnalysisOptions ApplySensitivity(ImageAnalysisOptions source, ExpertAnalysisSettings settings)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(source);
+        var clone = System.Text.Json.JsonSerializer.Deserialize<ImageAnalysisOptions>(json) ?? new ImageAnalysisOptions();
+        var edgeScale = 1.20 - (settings.EdgeWhiteningSensitivity * 0.4);
+        var cornerScale = 1.15 - (settings.CornerDetectionSensitivity * 0.3);
+        var scratchScale = 1.20 - (settings.SurfaceScratchSensitivity * 0.4);
+        clone.Whitening.MinDeltaE *= edgeScale;
+        clone.Whitening.MinBrightnessIncrease *= edgeScale;
+        clone.Whitening.MinWhiteningPixelScore *= Math.Clamp(edgeScale, 0.7, 1.3);
+        clone.CornerGeometry.MissingAreaReference *= cornerScale;
+        clone.CornerGeometry.MaxNormalDeviationRatio *= cornerScale;
+        clone.Scratch.CandidateScoreThreshold *= scratchScale;
+        clone.Scratch.MinLocalContrast *= scratchScale;
+        return clone;
+    }
+
+    private static IReadOnlyDictionary<string, string> MergeDebug(
+        IReadOnlyDictionary<string, string> first,
+        IReadOnlyDictionary<string, string> second)
+    {
+        var merged = new Dictionary<string, string>(first, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in second)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+
+        return merged;
     }
 
     private static GradingResult ApplyCriticalCap(GradingResult grading, GradeCapResult critical) =>

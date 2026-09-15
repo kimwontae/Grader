@@ -17,7 +17,7 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="이전" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
                         Command="{Binding BackCommand}" />
-                <Button Content="다음 / 적용" Style="{StaticResource PrimaryButton}"
+                <Button Content="{Binding NextButtonText}" Style="{StaticResource PrimaryButton}"
                         Command="{Binding NextCommand}" />
             </StackPanel>
         </DockPanel>
@@ -117,6 +117,44 @@
                             </TabControl>
                         </Grid>
 
+                        <StackPanel Visibility="{Binding IsCornerStep, Converter={StaticResource BoolVis}}">
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,12"
+                                       Text="선택 사항입니다. 비워두면 전체 사진에서 모서리 ROI를 잘라 분석합니다. 확대 사진을 올리면 신뢰도가 올라갑니다." />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition />
+                                    <ColumnDefinition />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="220" />
+                                    <RowDefinition Height="220" />
+                                </Grid.RowDefinitions>
+                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="0" Title="Top Left" ImagePath="{Binding FrontCornerTopLeftPath, Mode=TwoWay}" Margin="0,0,8,8" />
+                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="1" Title="Top Right" ImagePath="{Binding FrontCornerTopRightPath, Mode=TwoWay}" Margin="8,0,0,8" />
+                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="0" Title="Bottom Left" ImagePath="{Binding FrontCornerBottomLeftPath, Mode=TwoWay}" Margin="0,8,8,0" />
+                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="1" Title="Bottom Right" ImagePath="{Binding FrontCornerBottomRightPath, Mode=TwoWay}" Margin="8,8,0,0" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding IsSurfaceStep, Converter={StaticResource BoolVis}}">
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,12"
+                                       Text="선택 사항입니다. 정면/사광 사진을 올리면 스크래치·얼룩 후보를 더 안정적으로 봅니다. 없으면 전체 사진으로 보수적으로 분석합니다." />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition />
+                                    <ColumnDefinition />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="220" />
+                                    <RowDefinition Height="220" />
+                                </Grid.RowDefinitions>
+                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="0" Title="Front 정면 (상처)" ImagePath="{Binding FrontSurfaceNormalPath, Mode=TwoWay}" Margin="0,0,8,8" />
+                                <controls:ImageDropSlot Grid.Row="0" Grid.Column="1" Title="Front 사광" ImagePath="{Binding FrontSurfaceAngledPath, Mode=TwoWay}" Margin="8,0,0,8" />
+                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="0" Title="Back 정면" ImagePath="{Binding BackSurfaceNormalPath, Mode=TwoWay}" Margin="0,8,8,0" />
+                                <controls:ImageDropSlot Grid.Row="1" Grid.Column="1" Title="Back 사광" ImagePath="{Binding BackSurfaceAngledPath, Mode=TwoWay}" Margin="8,8,0,0" />
+                            </Grid>
+                        </StackPanel>
+
                         <Grid Visibility="{Binding IsProgressStep, Converter={StaticResource BoolVis}}">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="480">
                                 <TextBlock Text="{Binding ProgressStage}" FontSize="18" HorizontalAlignment="Center" />
@@ -176,7 +214,40 @@
                                     </TextBlock>
                                     <TextBlock Text="{Binding FrontRatioText}" Margin="0,4" />
                                     <TextBlock Text="{Binding BackRatioText}" Style="{StaticResource MutedText}" />
-                                    <TextBlock Margin="0,12,0,0" Text="Corners / Edges / Surface: Not Implemented" Foreground="{StaticResource ModerateBrush}" />
+                                    <TextBlock Margin="0,12,0,4">
+                                        <Run Text="Corners  " />
+                                        <Run Text="{Binding Result.Grading.Corners.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text=" / 100" />
+                                    </TextBlock>
+                                    <ItemsControl ItemsSource="{Binding Result.Corners.Corners}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Margin="0,2">
+                                                    <Run Text="{Binding Position, Mode=OneWay}" />
+                                                    <Run Text="  " />
+                                                    <Run Text="{Binding CombinedScore, Mode=OneWay, StringFormat=F0}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Margin="0,12,0,4">
+                                        <Run Text="Surface  " />
+                                        <Run Text="{Binding Result.Grading.Surface.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text=" / 100" />
+                                    </TextBlock>
+                                    <TextBlock Margin="0,12,0,4">
+                                        <Run Text="Edges  " />
+                                        <Run Text="{Binding Result.Grading.Edges.ConditionScore, Mode=OneWay, StringFormat=F1}" />
+                                        <Run Text=" / 100" />
+                                    </TextBlock>
+                                    <TextBlock Text="발견된 결함" FontWeight="SemiBold" Margin="0,12,0,4" />
+                                    <ItemsControl ItemsSource="{Binding Result.Defects}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                     <TextBlock Text="PSA 10 제한 요인" Style="{StaticResource SectionTitle}" Margin="0,16,0,8" />
                                     <ItemsControl ItemsSource="{Binding Result.Explanation.LimitReasons}">
                                         <ItemsControl.ItemTemplate>
