@@ -1,0 +1,51 @@
+{
+  "Card": {
+    "WidthMm": 63.0,
+    "HeightMm": 88.0
+  },
+  "Normalization": {
+    "CanonicalWidth": 1260,
+    "CanonicalHeight": 1760
+  },
+  "Quality": {
+    "MinShortSidePx": 1500,
+    "FocusExcellent": 90,
+    "FocusAcceptable": 75,
+    "FocusCaution": 60,
+    "FocusReferenceVariance": 180,
+    "HighlightClipThreshold": 250,
+    "ShadowClipThreshold": 5,
+    "GlareValueThreshold": 245,
+    "GlareSaturationThreshold": 40,
+    "MaxGlareCoverage": 0.18,
+    "MinOverallQuality": 60,
+    "PerspectiveSkewLimit": 0.22
+  },
+  "Detection": {
+    "ResizeMaxEdge": 1400,
+    "GaussianKernel": 5,
+    "CannyThreshold1": 50,
+    "CannyThreshold2": 150,
+    "MinAreaRatio": 0.08,
+    "MaxAreaRatio": 0.98,
+    "AspectRatioTolerance": 0.28,
+    "MinConfidence": 0.35
+  },
+  "Centering": {
+    "BorderSearchPercent": 0.18,
+    "MinPrintInsetPercent": 0.012,
+    "LowConfidenceThreshold": 0.55,
+    "PeakProminence": 1.35
+  },
+  "Corners": {
+    "RoiWidthPercent": 0.12,
+    "RoiHeightPercent": 0.12
+  },
+  "Edges": {
+    "RoiPercent": 0.05
+  },
+  "Surface": {
+    "ScratchSensitivity": 0.5,
+    "GlareExcludeThreshold": 0.6
+  }
+}

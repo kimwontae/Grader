@@ -1,0 +1,33 @@
+<UserControl x:Class="OnePieceCardGrader.App.Views.HistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="분석 기록" Style="{StaticResource SectionTitle}" />
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource CardPanel}" Margin="0,12,0,0">
+            <StackPanel>
+                <TextBlock Text="{Binding Status}" Style="{StaticResource MutedText}" Margin="0,0,0,8" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="실제 PSA 등급" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox Width="70" Text="{Binding ActualGradeText, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Cert #" VerticalAlignment="Center" Margin="16,0,8,0" />
+                    <TextBox Width="140" Text="{Binding CertNumber, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button Content="저장" Style="{StaticResource PrimaryButton}" Margin="12,0,8,0" Command="{Binding SaveActualCommand}" />
+                    <Button Content="JSON Export" Style="{StaticResource GhostButton}" Command="{Binding ExportCommand}" />
+                    <Button Content="새로고침" Style="{StaticResource GhostButton}" Margin="8,0,0,0" Command="{Binding LoadCommand}" />
+                </StackPanel>
+                <TextBox Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0" />
+            </StackPanel>
+        </Border>
+        <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="카드" Binding="{Binding CardName}" Width="*" />
+                <DataGridTextColumn Header="번호" Binding="{Binding CardNumber}" Width="120" />
+                <DataGridTextColumn Header="예상" Binding="{Binding PredictedGrade}" Width="70" />
+                <DataGridTextColumn Header="범위" Binding="{Binding GradeRangeMin}" Width="70" />
+                <DataGridTextColumn Header="신뢰도" Binding="{Binding Confidence, StringFormat=F0}" Width="80" />
+                <DataGridTextColumn Header="실제 PSA" Binding="{Binding ActualPsaGrade}" Width="90" />
+                <DataGridTextColumn Header="날짜" Binding="{Binding CreatedAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

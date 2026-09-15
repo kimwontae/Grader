@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OnePieceCardGrader.App/OnePieceCardGrader.App.csproj" />
+    <Project Path="src/OnePieceCardGrader.Core/OnePieceCardGrader.Core.csproj" />
+    <Project Path="src/OnePieceCardGrader.Grading/OnePieceCardGrader.Grading.csproj" />
+    <Project Path="src/OnePieceCardGrader.Imaging/OnePieceCardGrader.Imaging.csproj" />
+    <Project Path="src/OnePieceCardGrader.Infrastructure/OnePieceCardGrader.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OnePieceCardGrader.Core.Tests/OnePieceCardGrader.Core.Tests.csproj" />
+    <Project Path="tests/OnePieceCardGrader.Grading.Tests/OnePieceCardGrader.Grading.Tests.csproj" />
+    <Project Path="tests/OnePieceCardGrader.Imaging.Tests/OnePieceCardGrader.Imaging.Tests.csproj" />
+  </Folder>
+</Solution>

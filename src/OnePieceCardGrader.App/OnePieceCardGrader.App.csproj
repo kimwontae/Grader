@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>OnePieceCardGrader.App</RootNamespace>
+    <AssemblyName>OnePieceCardGrader</AssemblyName>
+    <ApplicationTitle>One Piece Card Grader</ApplicationTitle>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="8.0.1" />
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20241108" />
+    <PackageReference Include="OpenCvSharp4.WpfExtensions" Version="4.10.0.20241108" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OnePieceCardGrader.Core\OnePieceCardGrader.Core.csproj" />
+    <ProjectReference Include="..\OnePieceCardGrader.Imaging\OnePieceCardGrader.Imaging.csproj" />
+    <ProjectReference Include="..\OnePieceCardGrader.Grading\OnePieceCardGrader.Grading.csproj" />
+    <ProjectReference Include="..\OnePieceCardGrader.Infrastructure\OnePieceCardGrader.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Profiles\psa.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Config\analysis.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,31 @@
+<UserControl x:Class="OnePieceCardGrader.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer>
+        <StackPanel>
+            <TextBlock Text="설정" Style="{StaticResource SectionTitle}" />
+            <TextBlock Text="Expert 옵션. 일반 사용자는 기본값을 유지하는 것을 권장합니다." Style="{StaticResource MutedText}" Margin="0,0,0,16" />
+            <TextBlock Text="Centering Auto Detect Sensitivity" />
+            <Slider Minimum="0" Maximum="1" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                    Value="{Binding Settings.CenteringAutoDetectSensitivity}" />
+            <TextBlock Text="Corner Detection Sensitivity" />
+            <Slider Minimum="0" Maximum="1" Value="{Binding Settings.CornerDetectionSensitivity}" />
+            <TextBlock Text="Edge Whitening Sensitivity" />
+            <Slider Minimum="0" Maximum="1" Value="{Binding Settings.EdgeWhiteningSensitivity}" />
+            <TextBlock Text="Surface Scratch Sensitivity" />
+            <Slider Minimum="0" Maximum="1" Value="{Binding Settings.SurfaceScratchSensitivity}" />
+            <TextBlock Text="Glare Threshold" Margin="0,12,0,4" />
+            <TextBox Text="{Binding Settings.GlareThreshold}" Width="120" HorizontalAlignment="Left" />
+            <TextBlock Text="Minimum Image Quality" Margin="0,12,0,4" />
+            <TextBox Text="{Binding Settings.MinimumImageQuality}" Width="120" HorizontalAlignment="Left" />
+            <TextBlock Text="Card Width mm" Margin="0,12,0,4" />
+            <TextBox Text="{Binding Settings.CardWidthMm}" Width="120" HorizontalAlignment="Left" />
+            <TextBlock Text="Card Height mm" Margin="0,12,0,4" />
+            <TextBox Text="{Binding Settings.CardHeightMm}" Width="120" HorizontalAlignment="Left" />
+            <CheckBox Content="Developer Mode" IsChecked="{Binding Settings.DeveloperMode}" />
+            <CheckBox Content="Debug 중간 이미지 저장" IsChecked="{Binding Settings.SaveDebugImages}" />
+            <Button Content="저장" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,16,0,8" Command="{Binding SaveCommand}" />
+            <TextBlock Text="{Binding Status}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

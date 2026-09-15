@@ -1,0 +1,44 @@
+{
+  "Name": "PSA",
+  "Version": "1.0",
+  "Weights": {
+    "Centering": 0.20,
+    "Corners": 0.30,
+    "Edges": 0.20,
+    "Surface": 0.30
+  },
+  "Centering": {
+    "10": { "FrontMax": 55, "BackMax": 75 },
+    "9": { "FrontMax": 60, "BackMax": 90 },
+    "8": { "FrontMax": 65, "BackMax": 90 },
+    "7": { "FrontMax": 70, "BackMax": 90 },
+    "6": { "FrontMax": 80, "BackMax": 90 },
+    "5": { "FrontMax": 85, "BackMax": 95 },
+    "4": { "FrontMax": 90, "BackMax": 100 },
+    "3": { "FrontMax": 95, "BackMax": 100 },
+    "2": { "FrontMax": 100, "BackMax": 100 },
+    "1": { "FrontMax": 100, "BackMax": 100 }
+  },
+  "DefectRules": {
+    "Crease.Severe": 5,
+    "Crease.Major": 6,
+    "Dent.Major": 7,
+    "MissingMaterial.Major": 6,
+    "CornerWhitening.Minor": 9,
+    "EdgeWhitening.Minor": 9,
+    "Scratch.Minor": 9
+  },
+  "GradeThresholds": {
+    "10": 96,
+    "9": 90,
+    "8": 82,
+    "7": 74,
+    "6": 66,
+    "5": 58,
+    "4": 48,
+    "3": 36,
+    "2": 24,
+    "1": 0
+  },
+  "BorderlineDistance": 1.0
+}

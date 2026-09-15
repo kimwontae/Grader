@@ -1,0 +1,11 @@
+<UserControl x:Class="OnePieceCardGrader.App.Controls.QuadEditorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid SizeChanged="OnSizeChanged">
+        <Image x:Name="Photo" Stretch="Uniform" />
+        <Canvas x:Name="Overlay" Background="Transparent"
+                MouseLeftButtonDown="OnCanvasDown"
+                MouseMove="OnCanvasMove"
+                MouseLeftButtonUp="OnCanvasUp" />
+    </Grid>
+</UserControl>

@@ -1,0 +1,27 @@
+<UserControl x:Class="OnePieceCardGrader.App.Views.AboutView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer>
+        <StackPanel>
+            <TextBlock Text="{Binding Title}" Style="{StaticResource SectionTitle}" />
+            <TextBlock Text="{Binding Disclaimer}" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <TextBlock Text="{Binding ConfidenceMeaning}" TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,16" />
+            <TextBlock Text="현재 구현" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <ItemsControl ItemsSource="{Binding Implemented}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Margin="0,2" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="미구현 (Not Implemented)" FontWeight="SemiBold" Margin="0,16,0,8" />
+            <ItemsControl ItemsSource="{Binding NotImplemented}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Margin="0,2" Foreground="{StaticResource ModerateBrush}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
