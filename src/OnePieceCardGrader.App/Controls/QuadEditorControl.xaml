@@ -1,11 +1,55 @@
 <UserControl x:Class="OnePieceCardGrader.App.Controls.QuadEditorControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid SizeChanged="OnSizeChanged">
-        <Image x:Name="Photo" Stretch="Uniform" />
-        <Canvas x:Name="Overlay" Background="Transparent"
-                MouseLeftButtonDown="OnCanvasDown"
-                MouseMove="OnCanvasMove"
-                MouseLeftButtonUp="OnCanvasUp" />
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             AllowDrop="True"
+             Drop="OnDrop"
+             DragOver="OnDragOver">
+    <Grid>
+        <ScrollViewer x:Name="Scroller"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      PanningMode="Both"
+                      PreviewMouseWheel="OnPreviewMouseWheel"
+                      PreviewMouseDown="OnScrollPreviewDown"
+                      PreviewMouseMove="OnScrollPreviewMove"
+                      PreviewMouseUp="OnScrollPreviewUp"
+                      SizeChanged="OnViewportSizeChanged">
+            <Grid x:Name="StageHost" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <Grid x:Name="Stage" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image x:Name="Photo" Stretch="Fill" />
+                    <Canvas x:Name="Overlay" Background="Transparent"
+                            MouseLeftButtonDown="OnCanvasDown"
+                            MouseMove="OnCanvasMove"
+                            MouseLeftButtonUp="OnCanvasUp" />
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+        <Border x:Name="EmptyHint"
+                Background="{StaticResource SurfaceAltBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Visibility="Collapsed">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="사진을 올린 뒤 네 점을 드래그해 영역을 지정하세요"
+                           Style="{StaticResource MutedText}"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Margin="16,0" />
+                <Button x:Name="BrowseButton"
+                        Content="파일 선택"
+                        Style="{StaticResource GhostButton}"
+                        Margin="0,12,0,0"
+                        HorizontalAlignment="Center"
+                        Click="OnBrowse" />
+            </StackPanel>
+        </Border>
+        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                Background="#CC12141A" CornerRadius="6" Padding="8,5"
+                IsHitTestVisible="False">
+            <TextBlock x:Name="ZoomHint" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                       Text="Ctrl+휠 확대 · Shift+휠 좌우 · 가운데 버튼 드래그 이동" />
+        </Border>
     </Grid>
 </UserControl>

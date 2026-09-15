@@ -287,7 +287,7 @@ public partial class WizardViewModel : ObservableObject
     {
         if (double.TryParse(value, out var zoom))
         {
-            Zoom = zoom;
+            Zoom = Math.Clamp(zoom, 1, 8);
         }
     }
 

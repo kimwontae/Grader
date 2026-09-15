@@ -14,9 +14,14 @@ public partial class ImageDropSlot : UserControl
     public static readonly DependencyProperty ImagePathProperty =
         DependencyProperty.Register(nameof(ImagePath), typeof(string), typeof(ImageDropSlot), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnPathChanged));
 
+    public static readonly DependencyProperty CompactModeProperty =
+        DependencyProperty.Register(nameof(CompactMode), typeof(bool), typeof(ImageDropSlot), new PropertyMetadata(false, OnCompactChanged));
+
     public ImageDropSlot()
     {
         InitializeComponent();
+        ApplyChrome();
+        ApplyTitle(Title);
         MouseLeftButtonUp += (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(ImagePath))
@@ -38,11 +43,25 @@ public partial class ImageDropSlot : UserControl
         set => SetValue(ImagePathProperty, value);
     }
 
+    public bool CompactMode
+    {
+        get => (bool)GetValue(CompactModeProperty);
+        set => SetValue(CompactModeProperty, value);
+    }
+
     private static void OnTitleChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is ImageDropSlot { TitleText: not null } slot)
+        if (d is ImageDropSlot slot)
         {
-            slot.TitleText.Text = e.NewValue as string;
+            slot.ApplyTitle(e.NewValue as string);
+        }
+    }
+
+    private static void OnCompactChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is ImageDropSlot slot)
+        {
+            slot.ApplyChrome();
         }
     }
 
@@ -56,17 +75,46 @@ public partial class ImageDropSlot : UserControl
 
     private void RefreshPreview()
     {
+        ApplyChrome();
+        ApplyTitle(Title);
         var image = BitmapLoader.Load(ImagePath);
         if (image is null)
         {
             PreviewHost.Visibility = Visibility.Collapsed;
             Placeholder.Visibility = Visibility.Visible;
+            CompactClear.Visibility = Visibility.Collapsed;
             return;
         }
 
         Preview.Source = image;
         PreviewHost.Visibility = Visibility.Visible;
         Placeholder.Visibility = Visibility.Collapsed;
+        CompactClear.Visibility = Visibility.Visible;
+    }
+
+    private void ApplyTitle(string? title)
+    {
+        if (TitleText is not null)
+        {
+            TitleText.Text = title;
+        }
+
+        if (CompactTitle is not null)
+        {
+            CompactTitle.Text = title;
+        }
+    }
+
+    private void ApplyChrome()
+    {
+        MinHeight = CompactMode ? 0 : 180;
+        if (FullSlot is null || CompactBar is null)
+        {
+            return;
+        }
+
+        FullSlot.Visibility = CompactMode ? Visibility.Collapsed : Visibility.Visible;
+        CompactBar.Visibility = CompactMode ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)

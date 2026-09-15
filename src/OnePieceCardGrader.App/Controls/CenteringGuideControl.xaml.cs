@@ -18,14 +18,19 @@ public partial class CenteringGuideControl : UserControl
         DependencyProperty.Register(nameof(Guide), typeof(CenteringGuide), typeof(CenteringGuideControl), new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnChanged));
 
     public static readonly DependencyProperty ZoomProperty =
-        DependencyProperty.Register(nameof(Zoom), typeof(double), typeof(CenteringGuideControl), new PropertyMetadata(1.0, OnChanged));
+        DependencyProperty.Register(nameof(Zoom), typeof(double), typeof(CenteringGuideControl), new FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnChanged));
 
+    private string? _loadedPath;
     private string? _activeLine;
+    private bool _panning;
+    private ZoomPanScroll.PanState _panState;
+    private bool _updatingStage;
 
     public CenteringGuideControl()
     {
         InitializeComponent();
         Overlay.MouseMove += (_, e) => UpdateMagnifier(e.GetPosition(Overlay));
+        Loaded += (_, _) => Redraw();
     }
 
     public string? ImagePath
@@ -54,17 +59,24 @@ public partial class CenteringGuideControl : UserControl
         }
     }
 
+    private void OnViewportSizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
+
     private void Redraw()
     {
-        var bitmap = BitmapLoader.Load(ImagePath);
-        Photo.Source = bitmap;
-        if (bitmap is not null)
+        BitmapSource? bitmap;
+        if (_loadedPath != ImagePath || Photo.Source is null)
         {
-            Stage.Width = bitmap.PixelWidth * Zoom;
-            Stage.Height = bitmap.PixelHeight * Zoom;
+            bitmap = BitmapLoader.Load(ImagePath);
+            Photo.Source = bitmap;
+            _loadedPath = ImagePath;
         }
-
+        else
+        {
+            bitmap = Photo.Source as BitmapSource;
+        }
+        UpdateStageSize(bitmap);
         Overlay.Children.Clear();
+        ZoomHint.Text = $"Ctrl+휠 확대  {Zoom * 100:0}%  ·  Shift+휠 좌우  ·  가운데 버튼 드래그 이동";
         if (Guide is null || bitmap is null)
         {
             return;
@@ -74,6 +86,35 @@ public partial class CenteringGuideControl : UserControl
         AddLine("right", Guide.PrintRight * Stage.Width, vertical: true);
         AddLine("top", Guide.PrintTop * Stage.Height, vertical: false);
         AddLine("bottom", Guide.PrintBottom * Stage.Height, vertical: false);
+    }
+
+    private void UpdateStageSize(BitmapSource? bitmap)
+    {
+        if (_updatingStage || bitmap is null)
+        {
+            return;
+        }
+
+        var viewportW = Scroller.ActualWidth > 1 ? Scroller.ActualWidth : Math.Max(ActualWidth, 1);
+        var viewportH = Scroller.ActualHeight > 1 ? Scroller.ActualHeight : Math.Max(ActualHeight, 1);
+        if (Zoom <= 1.001)
+        {
+            viewportW = Math.Max(1, viewportW - 4);
+            viewportH = Math.Max(1, viewportH - 4);
+        }
+
+        var scale = ZoomPanScroll.FitScale(viewportW, viewportH, bitmap.PixelWidth, bitmap.PixelHeight) * Zoom;
+        var stageW = Math.Max(1, bitmap.PixelWidth * scale);
+        var stageH = Math.Max(1, bitmap.PixelHeight * scale);
+        if (Math.Abs(Stage.Width - stageW) < 1 && Math.Abs(Stage.Height - stageH) < 1)
+        {
+            return;
+        }
+
+        _updatingStage = true;
+        Stage.Width = stageW;
+        Stage.Height = stageH;
+        _updatingStage = false;
     }
 
     private void AddLine(string name, double position, bool vertical)
@@ -149,12 +190,41 @@ public partial class CenteringGuideControl : UserControl
 
     private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control)
+        ZoomPanScroll.TryHandleWheel(e, Scroller, Zoom, next => Zoom = next);
+    }
+
+    private void OnScrollPreviewDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle ||
+            (e.ChangedButton == MouseButton.Right && e.OriginalSource is not Line))
+        {
+            ZoomPanScroll.BeginPan(Scroller, e.GetPosition(Scroller), out _panState);
+            _panning = true;
+            Scroller.CaptureMouse();
+            e.Handled = true;
+        }
+    }
+
+    private void OnScrollPreviewMove(object sender, MouseEventArgs e)
+    {
+        if (!_panning)
         {
             return;
         }
 
-        Zoom = Math.Clamp(Zoom + (e.Delta > 0 ? 0.25 : -0.25), 1, 4);
+        ZoomPanScroll.MovePan(Scroller, e.GetPosition(Scroller), _panState);
+        e.Handled = true;
+    }
+
+    private void OnScrollPreviewUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_panning)
+        {
+            return;
+        }
+
+        _panning = false;
+        Scroller.ReleaseMouseCapture();
         e.Handled = true;
     }
 

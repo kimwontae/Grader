@@ -5,29 +5,43 @@
              Drop="OnDrop"
              DragOver="OnDragOver"
              MinHeight="180">
-    <Border Background="{StaticResource SurfaceAltBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Padding="8">
-        <Grid>
-            <StackPanel x:Name="Placeholder" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock x:Name="TitleText" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                <TextBlock Text="드래그 앤 드롭 또는 클릭하여 업로드"
-                           Style="{StaticResource MutedText}"
-                           Margin="0,8,0,0"
-                           HorizontalAlignment="Center" />
-                <Button Content="파일 선택" Style="{StaticResource GhostButton}" Margin="0,12,0,0" Click="OnBrowse" HorizontalAlignment="Center" />
+    <DockPanel>
+        <Border x:Name="CompactBar"
+                DockPanel.Dock="Top"
+                Visibility="Collapsed"
+                Background="Transparent"
+                Padding="0,0,0,4">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="CompactTitle" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Button Content="파일 선택" Style="{StaticResource GhostButton}" Click="OnBrowse" Margin="0,0,8,0" />
+                <Button x:Name="CompactClear" Content="제거" Style="{StaticResource GhostButton}" Click="OnClear" />
             </StackPanel>
-            <Grid x:Name="PreviewHost" Visibility="Collapsed">
-                <Image x:Name="Preview" Stretch="Uniform" />
-                <Button Content="제거"
-                        Style="{StaticResource GhostButton}"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Margin="8"
-                        Click="OnClear" />
+        </Border>
+        <Border x:Name="FullSlot"
+                Background="{StaticResource SurfaceAltBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="8">
+            <Grid>
+                <StackPanel x:Name="Placeholder" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock x:Name="TitleText" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="드래그 앤 드롭 또는 클릭하여 업로드"
+                               Style="{StaticResource MutedText}"
+                               Margin="0,8,0,0"
+                               HorizontalAlignment="Center" />
+                    <Button Content="파일 선택" Style="{StaticResource GhostButton}" Margin="0,12,0,0" Click="OnBrowse" HorizontalAlignment="Center" />
+                </StackPanel>
+                <Grid x:Name="PreviewHost" Visibility="Collapsed">
+                    <Image x:Name="Preview" Stretch="Uniform" />
+                    <Button Content="제거"
+                            Style="{StaticResource GhostButton}"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="8"
+                            Click="OnClear" />
+                </Grid>
             </Grid>
-        </Grid>
-    </Border>
+        </Border>
+    </DockPanel>
 </UserControl>

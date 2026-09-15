@@ -2,9 +2,16 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid>
-        <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                      PreviewMouseWheel="OnPreviewMouseWheel">
-            <Grid x:Name="Stage" Width="800" Height="800">
+        <ScrollViewer x:Name="Scroller"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      PanningMode="Both"
+                      PreviewMouseWheel="OnPreviewMouseWheel"
+                      PreviewMouseDown="OnScrollPreviewDown"
+                      PreviewMouseMove="OnScrollPreviewMove"
+                      PreviewMouseUp="OnScrollPreviewUp"
+                      SizeChanged="OnViewportSizeChanged">
+            <Grid x:Name="Stage" Width="800" Height="800" HorizontalAlignment="Left" VerticalAlignment="Top">
                 <Image x:Name="Photo" Stretch="Fill" />
                 <Canvas x:Name="Overlay" Background="Transparent"
                         MouseLeftButtonDown="OnDown"
@@ -12,7 +19,13 @@
                         MouseLeftButtonUp="OnUp" />
             </Grid>
         </ScrollViewer>
-        <Border Width="140" Height="140" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12"
+        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                Background="#CC12141A" CornerRadius="6" Padding="8,5"
+                IsHitTestVisible="False">
+            <TextBlock x:Name="ZoomHint" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                       Text="Ctrl+휠 확대 · Shift+휠 좌우 · 가운데 버튼 드래그 이동" />
+        </Border>
+        <Border Width="140" Height="140" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12,12,28,28"
                 BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" Background="#AA12141A"
                 x:Name="MagnifierHost" IsHitTestVisible="False">
             <Image x:Name="Magnifier" Stretch="UniformToFill" />
