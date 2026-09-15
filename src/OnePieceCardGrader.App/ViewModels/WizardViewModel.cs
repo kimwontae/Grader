@@ -30,12 +30,16 @@ public partial class WizardViewModel : ObservableObject
         _repository = repository;
         Disclaimer = AppConstants.DisclaimerKo;
         ConfidenceMeaning = AppConstants.ConfidenceMeaningKo;
+        ResetAnalysisStages();
     }
 
     public string Disclaimer { get; }
     public string ConfidenceMeaning { get; }
     public ObservableCollection<string> ProgressLog { get; } = [];
+    public ObservableCollection<AnalysisStageItem> AnalysisStages { get; } = [];
 
+    [NotifyCanExecuteChangedFor(nameof(NextCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BackCommand))]
     [ObservableProperty] private int _stepIndex;
     [ObservableProperty] private string _cardName = string.Empty;
     [ObservableProperty] private string _cardNumber = string.Empty;
@@ -53,10 +57,15 @@ public partial class WizardViewModel : ObservableObject
     [ObservableProperty] private CenteringGuide? _backGuide;
     [ObservableProperty] private string _activeSide = "Front";
     [ObservableProperty] private double _zoom = 1;
+    [NotifyCanExecuteChangedFor(nameof(NextCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BackCommand))]
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "카드 정보를 입력한 뒤 Front/Back 사진을 업로드하세요.";
     [ObservableProperty] private double _progressPercent;
     [ObservableProperty] private string _progressStage = string.Empty;
+    [ObservableProperty] private string _progressMessage = string.Empty;
+    [ObservableProperty] private string _progressPercentText = "0%";
+    [ObservableProperty] private string _progressBarLabel = "분석을 시작합니다...";
     [ObservableProperty] private CardAnalysisResult? _result;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private string _frontRatioText = "-";
@@ -75,8 +84,8 @@ public partial class WizardViewModel : ObservableObject
         _ => "8. 결과"
     };
 
-    public bool CanGoNext => StepIndex is >= 0 and < 6;
-    public bool CanGoBack => StepIndex > 0 && StepIndex != 6;
+    public bool CanGoNext => !IsBusy && StepIndex is >= 0 and < 6;
+    public bool CanGoBack => !IsBusy && StepIndex > 0 && StepIndex != 6;
     public bool IsInfoStep => StepIndex == 0;
     public bool IsPhotoStep => StepIndex == 1;
     public bool IsDetectionStep => StepIndex == 2;
@@ -112,12 +121,18 @@ public partial class WizardViewModel : ObservableObject
         OnPropertyChanged(nameof(NextButtonText));
     }
 
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanGoNext));
+        OnPropertyChanged(nameof(CanGoBack));
+    }
+
     partial void OnFrontGuideChanged(CenteringGuide? value) => RecalculateRatios();
     partial void OnBackGuideChanged(CenteringGuide? value) => RecalculateRatios();
     partial void OnFrontPreviewChanged(CardPreviewResult? value) => RecalculateRatios();
     partial void OnBackPreviewChanged(CardPreviewResult? value) => RecalculateRatios();
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanGoNext))]
     private async Task NextAsync()
     {
         ErrorMessage = null;
@@ -155,7 +170,7 @@ public partial class WizardViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanGoBack))]
     private void Back()
     {
         if (CanGoBack)
@@ -292,6 +307,13 @@ public partial class WizardViewModel : ObservableObject
         _cts = new CancellationTokenSource();
         IsBusy = true;
         ProgressLog.Clear();
+        ResetAnalysisStages();
+        ApplyProgress(new AnalysisProgress
+        {
+            Stage = AnalysisStageNames.Prepare,
+            Message = "분석을 시작합니다...",
+            Percent = 0
+        });
         StepIndex = 6;
         try
         {
@@ -322,15 +344,11 @@ public partial class WizardViewModel : ObservableObject
                 AdditionalImages = additional
             };
 
-            var progress = new Progress<AnalysisProgress>(p =>
-            {
-                ProgressPercent = p.Percent;
-                ProgressStage = p.Stage;
-                StatusMessage = p.Message;
-                ProgressLog.Insert(0, $"{p.Stage}: {p.Message}");
-            });
+            var progress = new Progress<AnalysisProgress>(ApplyProgress);
 
-            Result = await _pipeline.AnalyzeAsync(input, progress, _cts.Token);
+            Result = await Task.Run(
+                async () => await _pipeline.AnalyzeAsync(input, progress, _cts.Token).ConfigureAwait(false),
+                _cts.Token);
             await _repository.SaveAsync(Result, _cts.Token);
             StepIndex = 7;
         }
@@ -387,6 +405,49 @@ public partial class WizardViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
         {
             slots[kind] = path;
+        }
+    }
+
+    private void ResetAnalysisStages()
+    {
+        AnalysisStages.Clear();
+        foreach (var name in AnalysisStageNames.All)
+        {
+            AnalysisStages.Add(new AnalysisStageItem(name));
+        }
+    }
+
+    private void ApplyProgress(AnalysisProgress progress)
+    {
+        ProgressPercent = Math.Clamp(progress.Percent, 0, 100);
+        ProgressPercentText = $"{ProgressPercent:F0}%";
+        ProgressStage = progress.Stage;
+        ProgressMessage = progress.Message;
+        ProgressBarLabel = string.IsNullOrWhiteSpace(progress.Stage)
+            ? ProgressPercentText
+            : $"{progress.Stage}  ·  {ProgressPercentText}";
+        StatusMessage = string.IsNullOrWhiteSpace(progress.Message) ? progress.Stage : progress.Message;
+        ProgressLog.Insert(0, $"{ProgressPercentText}  {progress.Stage}: {progress.Message}");
+
+        var foundCurrent = false;
+        foreach (var stage in AnalysisStages)
+        {
+            if (stage.Name == progress.Stage)
+            {
+                stage.IsActive = progress.Percent < 100;
+                stage.IsCompleted = progress.Percent >= 100;
+                foundCurrent = true;
+            }
+            else if (!foundCurrent)
+            {
+                stage.IsActive = false;
+                stage.IsCompleted = true;
+            }
+            else
+            {
+                stage.IsActive = false;
+                stage.IsCompleted = progress.Percent >= 100;
+            }
         }
     }
 }

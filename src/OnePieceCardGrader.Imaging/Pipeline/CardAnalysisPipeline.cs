@@ -94,7 +94,8 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         var debug = new FileDebugImageSink(debugDir, settings.DeveloperMode && settings.SaveDebugImages);
         var analysisDebug = new DirectoryDebugSink(debugDir, settings.DeveloperMode && settings.SaveDebugImages);
 
-        Report(progress, "이미지 품질 확인", "Front 이미지를 불러오는 중", 5);
+        Report(progress, AnalysisStageNames.Prepare, "분석 설정을 준비하는 중", 1);
+        Report(progress, AnalysisStageNames.Front, "Front 이미지를 불러오는 중", 3);
         var frontOriginalPath = await _imageStorage.SaveOriginalAsync(analysisId, "front_original", input.FrontImagePath, cancellationToken);
         using var frontMat = ExifOrientation.LoadOriented(frontOriginalPath);
         debug.Save("01_original_front", MatAdapter.Wrap(frontMat));
@@ -109,7 +110,8 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             options,
             debug,
             progress,
-            10,
+            6,
+            28,
             cancellationToken);
 
         SideImageAnalysis? backSide = null;
@@ -118,7 +120,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         {
             if (!string.IsNullOrWhiteSpace(input.BackImagePath) && File.Exists(input.BackImagePath))
             {
-                Report(progress, "이미지 품질 확인", "Back 이미지를 불러오는 중", 30);
+                Report(progress, AnalysisStageNames.Back, "Back 이미지를 불러오는 중", 29);
                 var backOriginalPath = await _imageStorage.SaveOriginalAsync(analysisId, "back_original", input.BackImagePath, cancellationToken);
                 backMat = ExifOrientation.LoadOriented(backOriginalPath);
                 debug.Save("01_original_back", MatAdapter.Wrap(backMat));
@@ -131,12 +133,17 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                     options,
                     debug,
                     progress,
-                    35,
+                    32,
+                    46,
                     cancellationToken);
+            }
+            else
+            {
+                Report(progress, AnalysisStageNames.Back, "Back 사진이 없어 건너뜁니다.", 46);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            Report(progress, "센터링 분석", "Front/Back 센터링을 계산하는 중", 55);
+            Report(progress, AnalysisStageNames.Centering, "Front/Back 센터링을 계산하는 중", 47);
 
             var warnings = new List<string>();
             warnings.AddRange(frontSide.Quality.Warnings);
@@ -166,6 +173,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             if (frontSide.NormalizedPath is not null)
             {
+                Report(progress, AnalysisStageNames.Centering, "Front 센터링을 계산하는 중", 49);
                 using var normalizedFront = Cv2.ImRead(frontSide.NormalizedPath, ImreadModes.Color);
                 var frontGuide = input.FrontCenteringGuide;
                 if (frontGuide is not null)
@@ -184,6 +192,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             if (backSide?.NormalizedPath is not null)
             {
+                Report(progress, AnalysisStageNames.Centering, "Back 센터링을 계산하는 중", 53);
                 using var normalizedBack = Cv2.ImRead(backSide.NormalizedPath, ImreadModes.Color);
                 var backGuide = input.BackCenteringGuide;
                 if (backGuide is not null)
@@ -198,6 +207,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             var centeringCap = CenteringGradeCapCalculator.CalculateCap(frontCentering, backCentering, profile);
             _logger.LogInformation("Final centering grade cap = {Cap}", centeringCap);
 
+            Report(progress, AnalysisStageNames.Centering, "추가 사진을 저장하는 중", 56);
             var additional = await PersistAdditionalImagesAsync(analysisId, input, cancellationToken);
 
             var centeringResult = new CenteringResult
@@ -210,14 +220,14 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 ModeUsed = mode
             };
 
-            Report(progress, "코너 분석", "모서리 whitening/geometry를 검사하는 중", 70);
-            var cornerAnalysis = AnalyzeCorners(frontSide, additional, options, imageOptions, analysisDebug, cancellationToken);
+            Report(progress, AnalysisStageNames.Corners, "모서리 whitening/geometry를 검사하는 중", 58);
+            var cornerAnalysis = AnalyzeCorners(frontSide, additional, options, imageOptions, analysisDebug, progress, cancellationToken);
 
-            Report(progress, "엣지 분석", "Edge whitening을 검사하는 중", 75);
-            var edgeAnalysis = AnalyzeEdges(frontSide, imageOptions, analysisDebug, cancellationToken);
+            Report(progress, AnalysisStageNames.Edges, "Edge whitening을 검사하는 중", 74);
+            var edgeAnalysis = AnalyzeEdges(frontSide, imageOptions, analysisDebug, progress, cancellationToken);
 
-            Report(progress, "표면 분석", "스크래치 후보를 검사하는 중", 80);
-            var surfaceAnalysis = AnalyzeSurface(frontSide, backSide, additional, analysisDebug);
+            Report(progress, AnalysisStageNames.Surface, "스크래치 후보를 검사하는 중", 84);
+            var surfaceAnalysis = AnalyzeSurface(frontSide, backSide, additional, analysisDebug, progress, cancellationToken);
 
             var coverage = BuildCoverage(input, frontSide, backSide, cornerAnalysis, edgeAnalysis, surfaceAnalysis);
             var defects = new List<DetectedDefect>();
@@ -248,6 +258,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             if (frontSide.NormalizedPath is not null)
             {
+                Report(progress, AnalysisStageNames.Grading, "Front 오버레이를 생성하는 중", 94);
                 using var normalizedFront = Cv2.ImRead(frontSide.NormalizedPath, ImreadModes.Color);
                 using var overlay = frontCentering is null
                     ? normalizedFront.Clone()
@@ -260,6 +271,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             if (backSide?.NormalizedPath is not null)
             {
+                Report(progress, AnalysisStageNames.Grading, "Back 오버레이를 생성하는 중", 96);
                 using var normalizedBack = Cv2.ImRead(backSide.NormalizedPath, ImreadModes.Color);
                 using var overlay = backCentering is null
                     ? normalizedBack.Clone()
@@ -291,7 +303,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
             if (canCompute)
             {
-                Report(progress, "예상 등급 계산", "PSA 규칙을 적용하는 중", 90);
+                Report(progress, AnalysisStageNames.Grading, "PSA 규칙을 적용하는 중", 98);
                 var grading = _gradingEngine.Calculate(result);
                 if (critical.MaxGrade < grading.PredictedGrade)
                 {
@@ -301,8 +313,12 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 result.Grading = grading;
                 result.Explanation = _explanationService.Generate(result, grading);
             }
+            else
+            {
+                Report(progress, AnalysisStageNames.Grading, blocking ?? "등급을 계산할 수 없어 건너뜁니다.", 99);
+            }
 
-            Report(progress, "완료", canCompute ? "분석을 완료했습니다." : blocking ?? "분석을 완료하지 못했습니다.", 100);
+            Report(progress, AnalysisStageNames.Done, canCompute ? "분석을 완료했습니다." : blocking ?? "분석을 완료하지 못했습니다.", 100);
             return result;
         }
         finally
@@ -320,13 +336,17 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         AnalysisOptions options,
         IDebugImageSink debug,
         IProgress<AnalysisProgress>? progress,
-        double startPercent,
+        double fromPercent,
+        double toPercent,
         CancellationToken cancellationToken)
     {
+        var stage = side == CardSide.Front ? AnalysisStageNames.Front : AnalysisStageNames.Back;
         cancellationToken.ThrowIfCancellationRequested();
+        Report(progress, stage, $"{side} 이미지 품질을 검사하는 중", Map(fromPercent, toPercent, 0, 4));
         var quality = _qualityAnalyzer.Analyze(MatAdapter.Wrap(source));
-        Report(progress, "이미지 품질 확인", $"{side} 품질 점수 {quality.OverallQualityScore:F0}", startPercent);
+        Report(progress, stage, $"{side} 품질 점수 {quality.OverallQualityScore:F0}", Map(fromPercent, toPercent, 1, 4));
 
+        Report(progress, stage, $"{side} 카드 영역을 찾는 중", Map(fromPercent, toPercent, 1.3, 4));
         var detection = manualCorners is not null
             ? new CardDetectionResult
             {
@@ -339,14 +359,14 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             }
             : _cardDetector.Detect(MatAdapter.Wrap(source));
 
-        Report(progress, "카드 영역 검출", detection.Success ? $"{side} 카드 영역을 찾았습니다." : $"{side} 검출 실패", startPercent + 8);
+        Report(progress, stage, detection.Success ? $"{side} 카드 영역을 찾았습니다." : $"{side} 검출 실패", Map(fromPercent, toPercent, 2, 4));
 
         string? normalizedPath = null;
         var normalizedWidth = 0;
         var normalizedHeight = 0;
         if (detection is { Success: true, Corners: not null })
         {
-            Report(progress, "카드 영역 검출", $"{side} Perspective Correction", startPercent + 12);
+            Report(progress, stage, $"{side} 원근 보정 중", Map(fromPercent, toPercent, 2.5, 4));
             var corrected = _perspectiveCorrector.Correct(MatAdapter.Wrap(source), detection.Corners, options.Normalization);
             var correctedMat = MatAdapter.Unwrap(corrected);
             try
@@ -366,6 +386,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             }
         }
 
+        Report(progress, stage, $"{side} 이미지 처리를 완료했습니다.", toPercent);
         return new SideImageAnalysis
         {
             Side = side,
@@ -433,10 +454,12 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         AnalysisOptions options,
         ImageAnalysisOptions imageOptions,
         IAnalysisDebugSink analysisDebug,
+        IProgress<AnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
         if (front.NormalizedPath is null || !File.Exists(front.NormalizedPath))
         {
+            Report(progress, AnalysisStageNames.Corners, "정규화된 이미지가 없어 코너 분석을 건너뜁니다.", 74);
             return new CornerAnalysisResult
             {
                 Status = AnalysisStatus.Skipped,
@@ -444,6 +467,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             };
         }
 
+        Report(progress, AnalysisStageNames.Corners, "모서리 검사 영역을 준비하는 중", 59);
         using var normalized = Cv2.ImRead(front.NormalizedPath, ImreadModes.Color);
         var glareDet = GlareDetector.Analyze(normalized, options.Quality);
         using var glare = new GlareMask(
@@ -459,9 +483,16 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         };
 
         var results = new List<CornerResult>();
-        foreach (var position in Enum.GetValues<CornerPosition>())
+        var positions = Enum.GetValues<CornerPosition>();
+        for (var i = 0; i < positions.Length; i++)
         {
+            var position = positions[i];
             cancellationToken.ThrowIfCancellationRequested();
+            Report(
+                progress,
+                AnalysisStageNames.Corners,
+                $"{CornerLabel(position)} 모서리 검사 중 ({i + 1}/{positions.Length})",
+                Map(58, 74, i, positions.Length));
             var slot = position switch
             {
                 CornerPosition.TopLeft => ImageSlotKind.FrontCornerTopLeft,
@@ -528,6 +559,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             }
         }
 
+        Report(progress, AnalysisStageNames.Corners, "모서리 검사를 완료했습니다.", 74);
         var scores = results.Select(r => r.CombinedScore).ToArray();
         return new CornerAnalysisResult
         {
@@ -543,10 +575,12 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         SideImageAnalysis front,
         ImageAnalysisOptions imageOptions,
         IAnalysisDebugSink analysisDebug,
+        IProgress<AnalysisProgress>? progress,
         CancellationToken cancellationToken)
     {
         if (front.NormalizedPath is null || !File.Exists(front.NormalizedPath))
         {
+            Report(progress, AnalysisStageNames.Edges, "정규화된 이미지가 없어 엣지 분석을 건너뜁니다.", 84);
             return new EdgeAnalysisResult
             {
                 Status = AnalysisStatus.Skipped,
@@ -554,6 +588,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             };
         }
 
+        Report(progress, AnalysisStageNames.Edges, "엣지 검사 영역을 준비하는 중", 75);
         using var normalized = Cv2.ImRead(front.NormalizedPath, ImreadModes.Color);
         var glareDet = GlareDetector.Analyze(normalized, _baseOptions.Quality);
         using var glare = new GlareMask(
@@ -569,9 +604,16 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
 
         var edges = new List<EdgeResult>();
         var defects = new List<DetectedDefect>();
-        foreach (var position in Enum.GetValues<EdgePosition>())
+        var positions = Enum.GetValues<EdgePosition>();
+        for (var i = 0; i < positions.Length; i++)
         {
+            var position = positions[i];
             cancellationToken.ThrowIfCancellationRequested();
+            Report(
+                progress,
+                AnalysisStageNames.Edges,
+                $"{EdgeLabel(position)} 엣지 검사 중 ({i + 1}/{positions.Length})",
+                Map(74, 84, i, positions.Length));
             var whitening = _whiteningAnalyzer.Analyze(
                 normalized,
                 WhiteningRegionMap.FromEdge(position),
@@ -601,6 +643,7 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             });
         }
 
+        Report(progress, AnalysisStageNames.Edges, "엣지 검사를 완료했습니다.", 84);
         var condition = CornerGeometryScoreCalculator.ComputeFinalCornerScore(
             edges.Select(e => e.Score).ToArray(),
             imageOptions.CornerGeometry);
@@ -619,8 +662,11 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         SideImageAnalysis front,
         SideImageAnalysis? back,
         IReadOnlyDictionary<ImageSlotKind, string> additional,
-        IAnalysisDebugSink analysisDebug)
+        IAnalysisDebugSink analysisDebug,
+        IProgress<AnalysisProgress>? progress,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var hasDedicated = additional.ContainsKey(ImageSlotKind.FrontSurfaceNormal)
                            || additional.ContainsKey(ImageSlotKind.FrontSurfaceAngled)
                            || additional.ContainsKey(ImageSlotKind.BackSurfaceNormal)
@@ -643,15 +689,24 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
             HasAngledLight = set.AngledFrontPath is not null || set.AngledBackPath is not null
         };
 
-        var frontScratch = string.IsNullOrWhiteSpace(set.NormalFrontPath)
-            ? null
-            : _scratchAnalyzer.Analyze(set, CardSide.Front, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/front"));
-        var backScratch = string.IsNullOrWhiteSpace(set.NormalBackPath)
-            ? null
-            : _scratchAnalyzer.Analyze(set, CardSide.Back, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/back"));
+        ScratchAnalysisResult? frontScratch = null;
+        if (!string.IsNullOrWhiteSpace(set.NormalFrontPath))
+        {
+            Report(progress, AnalysisStageNames.Surface, "Front 스크래치 후보를 검사하는 중", 85);
+            frontScratch = _scratchAnalyzer.Analyze(set, CardSide.Front, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/front"));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ScratchAnalysisResult? backScratch = null;
+        if (!string.IsNullOrWhiteSpace(set.NormalBackPath))
+        {
+            Report(progress, AnalysisStageNames.Surface, "Back 스크래치 후보를 검사하는 중", 89);
+            backScratch = _scratchAnalyzer.Analyze(set, CardSide.Back, context, new PrefixedAnalysisDebugSink(analysisDebug, "scratch/back"));
+        }
 
         if (frontScratch is null && backScratch is null)
         {
+            Report(progress, AnalysisStageNames.Surface, "표면 분석용 이미지가 없어 건너뜁니다.", 94);
             return new SurfaceAnalysisResult
             {
                 Status = AnalysisStatus.Skipped,
@@ -659,6 +714,8 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
                 Confidence = 0
             };
         }
+
+        Report(progress, AnalysisStageNames.Surface, "표면 검사를 완료했습니다.", 94);
 
         var defects = new List<DetectedDefect>();
         if (frontScratch is not null)
@@ -785,5 +842,36 @@ public sealed class CardAnalysisPipeline : ICardAnalysisPipeline
         };
 
     private static void Report(IProgress<AnalysisProgress>? progress, string stage, string message, double percent) =>
-        progress?.Report(new AnalysisProgress { Stage = stage, Message = message, Percent = percent });
+        progress?.Report(new AnalysisProgress
+        {
+            Stage = stage,
+            Message = message,
+            Percent = Math.Clamp(percent, 0, 100)
+        });
+
+    private static double Map(double from, double to, double index, int count)
+    {
+        if (count <= 0)
+        {
+            return to;
+        }
+
+        return from + ((to - from) * (index / count));
+    }
+
+    private static string CornerLabel(CornerPosition position) => position switch
+    {
+        CornerPosition.TopLeft => "좌상단",
+        CornerPosition.TopRight => "우상단",
+        CornerPosition.BottomRight => "우하단",
+        _ => "좌하단"
+    };
+
+    private static string EdgeLabel(EdgePosition position) => position switch
+    {
+        EdgePosition.Top => "상단",
+        EdgePosition.Right => "우측",
+        EdgePosition.Bottom => "하단",
+        _ => "좌측"
+    };
 }
